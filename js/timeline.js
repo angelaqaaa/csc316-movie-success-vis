@@ -81,10 +81,10 @@ class Timeline {
             .attr("x", vis.width / 2)
             .attr("y", -5)
             .style("text-anchor", "middle")
-            .style("font-size", "13px")
-            .style("font-weight", "600")
-            .style("fill", "#e50914")
-            .text("Timeline: Average Movie Revenue by Year");
+            .style("font-size", "14px")
+            .style("font-weight", "500")
+            .style("fill", "#cccccc")
+            .text("Average Movie Revenue by Year");
 
         // Initialize brush component
         vis.brush = d3.brushX()

@@ -110,7 +110,7 @@ class plotChart {
         // Color scale for IMDB ratings
         vis.colorScale = d3.scaleThreshold()
             .domain([8])  // threshold at rating 8
-            .range(["#ffb81eff", "#ff2919ff"]);  // red for low, green for high
+            .range(["#005AB5", "#ff2919ff"]);  // red for low, green for high
 
         // Axes
         vis.xAxis = d3.axisBottom(vis.xScale)
@@ -155,7 +155,7 @@ class plotChart {
 
         const legendData = [
             { color: "#ff2919ff", label: "High (≥8) IMDB Rating" },
-            { color: "#ffb81eff", label: "Low (<8) IMDB Rating" }
+            { color: "#005AB5", label: "Low (<8) IMDB Rating" }
         ];
 
         const legend = vis.svg.append("g")
