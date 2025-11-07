@@ -6,6 +6,7 @@ class plotChart {
         this.selectedGenres = new Set(); // Changed to Set for multiple selections
         this.yearRange = null;
         this.isInitialized = false; // Track if charts have been initialized
+        this.visibleRatingBands = new Set(['high', 'low']); // Track visible rating bands
 
         this.initVis();
     }
@@ -149,37 +150,88 @@ class plotChart {
             .style("fill", "#cccccc")
             .text("Gross Revenue");
 
-        // ===== Add Color Legend =====
+        // ===== Add Interactive Color Legend =====
         // Legend position: top right of y-axis
         const legendSpacing = 28;
 
         const legendData = [
-            { color: "#ff2919ff", label: "High (≥8) IMDB Rating" },
-            { color: "#005AB5", label: "Low (<8) IMDB Rating" }
+            { id: "high", color: "#ff2919ff", label: "High (≥8) IMDB Rating", threshold: 8 },
+            { id: "low", color: "#005AB5", label: "Low (<8) IMDB Rating", threshold: 0 }
         ];
 
         const legend = vis.svg.append("g")
             .attr("class", "legend")
             .attr("transform", `translate(80,0)`);
 
-        legend.selectAll("circle")
+        // Create clickable legend items
+        const legendItems = legend.selectAll(".legend-item")
             .data(legendData)
             .enter()
-            .append("circle")
+            .append("g")
+            .attr("class", "legend-item")
+            .attr("transform", (d, i) => `translate(0, ${i * legendSpacing})`)
+            .style("cursor", "pointer")
+            .attr("tabindex", "0") // Make keyboard accessible
+            .attr("role", "button")
+            .attr("aria-pressed", "true")
+            .attr("aria-label", d => `Toggle ${d.label}`)
+            .on("click", function(event, d) {
+                vis.toggleRatingBand(d.id);
+            })
+            .on("keypress", function(event, d) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    vis.toggleRatingBand(d.id);
+                }
+            });
+
+        legendItems.append("circle")
+            .attr("class", "legend-symbol")
             .attr("cx", 0)
-            .attr("cy", (d, i) => i * legendSpacing)
+            .attr("cy", 0)
             .attr("r", 6)
             .attr("fill", d => d.color)
             .attr("stroke", "#fff")
             .attr("stroke-width", 1.5);
 
-        legend.selectAll("text")
-            .data(legendData)
-            .enter()
-            .append("text")
+        legendItems.append("text")
+            .attr("class", "legend-label")
             .attr("x", 12)
-            .attr("y", (d, i) => i * legendSpacing + 4)
-            .text(d => d.label);
+            .attr("y", 4)
+            .text(d => d.label)
+            .style("fill", "#ccc");
+
+        // Add reset legend button
+        const resetLegendGroup = legend.append("g")
+            .attr("class", "reset-legend-btn")
+            .attr("transform", `translate(0, ${legendSpacing * 2 + 10})`)
+            .style("cursor", "pointer")
+            .attr("tabindex", "0")
+            .attr("role", "button")
+            .attr("aria-label", "Reset legend filters")
+            .on("click", function() {
+                vis.resetLegend();
+            })
+            .on("keypress", function(event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    vis.resetLegend();
+                }
+            });
+
+        resetLegendGroup.append("text")
+            .attr("x", 0)
+            .attr("y", 4)
+            .text("↺ Reset legend")
+            .style("fill", "#888")
+            .style("font-size", "11px")
+            .style("font-weight", "500")
+            .on("mouseover", function() {
+                d3.select(this).style("fill", "#e50914");
+            })
+            .on("mouseout", function() {
+                d3.select(this).style("fill", "#888");
+            });
     }
 
 
@@ -191,6 +243,62 @@ class plotChart {
         let vis = this;
         vis.yearRange = yearRange;
         vis.wrangleData();
+    }
+
+    // Method to toggle rating band visibility
+    toggleRatingBand(bandId) {
+        let vis = this;
+
+        if (vis.visibleRatingBands.has(bandId)) {
+            vis.visibleRatingBands.delete(bandId);
+        } else {
+            vis.visibleRatingBands.add(bandId);
+        }
+
+        // Update legend visual state
+        vis.updateLegendState();
+
+        // Refresh visualization with smooth transition
+        vis.wrangleData();
+    }
+
+    // Method to reset legend filters
+    resetLegend() {
+        let vis = this;
+        vis.visibleRatingBands.clear();
+        vis.visibleRatingBands.add('high');
+        vis.visibleRatingBands.add('low');
+
+        // Update legend visual state
+        vis.updateLegendState();
+
+        // Refresh visualization
+        vis.wrangleData();
+    }
+
+    // Update legend visual state based on active filters
+    updateLegendState() {
+        let vis = this;
+
+        vis.svg.selectAll(".legend-item")
+            .each(function(d) {
+                const isActive = vis.visibleRatingBands.has(d.id);
+
+                d3.select(this)
+                    .attr("aria-pressed", isActive)
+                    .select(".legend-symbol")
+                    .transition()
+                    .duration(200)
+                    .attr("fill", isActive ? d.color : "#333")
+                    .attr("opacity", isActive ? 1 : 0.3);
+
+                d3.select(this)
+                    .select(".legend-label")
+                    .transition()
+                    .duration(200)
+                    .style("fill", isActive ? "#ccc" : "#666")
+                    .style("text-decoration", isActive ? "none" : "line-through");
+            });
     }
 
     wrangleData() {
@@ -206,6 +314,14 @@ class plotChart {
                 return movieGenres.some(genre => vis.selectedGenres.has(genre));
             });
         }
+
+        // Filter by rating bands
+        vis.displayData = vis.displayData.filter(d => {
+            const rating = d.IMDB_Rating;
+            if (rating >= 8 && vis.visibleRatingBands.has('high')) return true;
+            if (rating < 8 && vis.visibleRatingBands.has('low')) return true;
+            return false;
+        });
 
         // Filter by year range if brush is active
         if (vis.yearRange) {

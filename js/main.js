@@ -63,8 +63,8 @@ function loadData() {
             myTimeline.brushGroup.call(myTimeline.brush.move, null);
             myChart.yearRange = null;
 
-            // Update chart
-            myChart.wrangleData();
+            // Reset legend filters too
+            myChart.resetLegend();
         });
 
         // Setup reset timeline button (new)
