@@ -210,11 +210,19 @@
   .dropdown-item {
     padding: 3px 6px;
     font-size: 12px;
+    cursor: pointer;
   }
 
   .dropdown-item:hover {
     background-color: #444;
     color: #fff;
+  }
+
+  /* Make entire dropdown row clickable */
+  .dropdown-item .form-check {
+    margin: 0;
+    padding: 4px 8px;
+    cursor: pointer;
   }
 
 

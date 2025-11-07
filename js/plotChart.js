@@ -85,6 +85,11 @@ class plotChart {
         // Main chart dimensions
         vis.margin = { top: 20, right: 40, bottom: 60, left: 60 };
 
+        // Store original scales for zoom reset
+        vis.originalXDomain = null;
+        vis.originalYDomain = null;
+        vis.currentTransform = d3.zoomIdentity;
+
         // Get the actual dimensions of the container
         let container = document.getElementById("main-chart");
         let containerWidth = container ? container.getBoundingClientRect().width : 1400;
@@ -200,6 +205,21 @@ class plotChart {
             .attr("y", 4)
             .text(d => d.label)
             .style("fill", "#ccc");
+
+        // Add hover effects for better discoverability
+        legendItems
+            .on("mouseover", function(event, d) {
+                if (vis.visibleRatingBands.has(d.id)) {
+                    d3.select(this).select(".legend-label")
+                        .style("text-decoration", "underline")
+                        .style("fill", "#fff");
+                    d3.select(this).select(".legend-symbol")
+                        .attr("stroke-width", 2.5);
+                }
+            })
+            .on("mouseout", function(event, d) {
+                vis.updateLegendState(); // Reset to current state
+            });
 
         // Add reset legend button
         const resetLegendGroup = legend.append("g")
@@ -589,18 +609,18 @@ class plotChart {
             let spaceBelow = vis.height - y;
             let annotateAbove = spaceAbove > 100; // Need at least 100px above to avoid covering points
 
-            // Position annotation with more clearance (20px from point, 50px connector line)
+            // Position annotation closer to point (8px clearance for better visual connection)
             let lineY1, lineY2, labelY;
             if (annotateAbove) {
                 // Annotation above the point
-                lineY1 = y - 20;  // 20px clearance from point
-                lineY2 = y - 70;  // 50px connector line
-                labelY = y - 75;  // 5px beyond line end
+                lineY1 = y - 8;   // 8px clearance from point (closer than before)
+                lineY2 = y - 50;  // 42px connector line
+                labelY = y - 55;  // 5px beyond line end
             } else {
                 // Annotation below the point
-                lineY1 = y + 20;
-                lineY2 = y + 70;
-                labelY = y + 85;  // More space below
+                lineY1 = y + 8;
+                lineY2 = y + 50;
+                labelY = y + 65;  // More space below
             }
 
             // Start with full title
@@ -713,16 +733,16 @@ class plotChart {
                 let spaceBelow = vis.height - y;
                 let annotateAbove = spaceAbove > 100; // Need at least 100px above
 
-                // Position annotation with more clearance (20px from point, 50px connector line)
+                // Position annotation closer to point (8px clearance for better visual connection)
                 let lineY1, lineY2, labelY;
                 if (annotateAbove) {
-                    lineY1 = y - 20;  // 20px clearance from point
-                    lineY2 = y - 70;  // 50px connector line
-                    labelY = y - 75;  // 5px beyond line end
+                    lineY1 = y - 8;   // 8px clearance from point (closer than before)
+                    lineY2 = y - 50;  // 42px connector line
+                    labelY = y - 55;  // 5px beyond line end
                 } else {
-                    lineY1 = y + 20;
-                    lineY2 = y + 70;
-                    labelY = y + 85;  // More space below
+                    lineY1 = y + 8;
+                    lineY2 = y + 50;
+                    labelY = y + 65;  // More space below
                 }
 
                 // Start with full title including rating

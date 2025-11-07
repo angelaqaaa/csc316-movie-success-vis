@@ -37,7 +37,7 @@ class DropdownMenu {
             let formCheck = option.append("div")
                 .attr("class", "form-check");
 
-            formCheck.append("input")
+            let checkbox = formCheck.append("input")
                 .attr("class", "form-check-input")
                 .attr("type", "checkbox")
                 .attr("id", `genre-${genre.replace(/\s+/g, '-')}`)
@@ -59,6 +59,16 @@ class DropdownMenu {
             label.append("span")
                 .attr("class", "genre-count-badge")
                 .text(` (${genreCounts[genre]})`);
+
+            // Make entire row clickable (not just checkbox/label)
+            option.on("click", function(event) {
+                // Prevent double-trigger if clicking directly on checkbox or label
+                if (!event.target.matches('input') && !event.target.matches('label') && !event.target.closest('label')) {
+                    checkbox.property("checked", !checkbox.property("checked"));
+                    checkbox.dispatch("change");
+                    event.stopPropagation();
+                }
+            });
         });
 
         // "Select All" functionality
