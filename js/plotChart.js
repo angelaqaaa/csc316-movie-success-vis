@@ -111,11 +111,14 @@ class plotChart {
             .attr("transform", `translate(${vis.margin.left}, ${vis.margin.top})`);
 
         // Add clip path to prevent dots from showing outside chart area
+        // Add extra padding at bottom to ensure dots on axis are fully visible
         vis.svg.append("defs").append("clipPath")
             .attr("id", "chart-clip")
             .append("rect")
-            .attr("width", vis.width)
-            .attr("height", vis.height);
+            .attr("x", -5)  // Small padding on left
+            .attr("y", -5)  // Small padding on top
+            .attr("width", vis.width + 10)  // Add padding on both sides
+            .attr("height", vis.height + 10);  // Extra space at bottom for dots on axis
 
         // Scales
         vis.xScale = d3.scaleLinear()
@@ -137,6 +140,7 @@ class plotChart {
             .tickFormat(d => `$${d / 1000000}M`);
 
 
+        // Add axes FIRST so they appear behind everything
         vis.xAxisGroup = vis.svg.append("g")
             .attr("class", "axis x-axis")
             .attr("transform", `translate(0, ${vis.height})`);
@@ -144,7 +148,7 @@ class plotChart {
         vis.yAxisGroup = vis.svg.append("g")
             .attr("class", "axis y-axis");
 
-        // Create group for chart content that will be clipped (after axes so dots appear on top)
+        // Create group for chart content AFTER axes so dots appear on top
         vis.chartArea = vis.svg.append("g")
             .attr("clip-path", "url(#chart-clip)");
 
@@ -170,7 +174,40 @@ class plotChart {
             .style("fill", "#cccccc")
             .text("Gross Revenue");
 
-        // ===== Add Interactive Color Legend =====
+
+        // Initialize zoom behavior now that dimensions are set
+        vis.zoom = d3.zoom()
+            .scaleExtent([0.8, 5]) // More conservative zoom range
+            .translateExtent([[0, 0], [vis.width, vis.height]]) // Keep within chart bounds
+            .extent([[0, 0], [vis.width, vis.height]])
+            .filter(function(event) {
+                // Allow zoom only with:
+                // - Ctrl/Cmd + scroll (standard zoom gesture)
+                // - Mouse drag (pan)
+                // - Touch events
+                // This prevents accidental zoom on normal scrolling
+                return event.ctrlKey || event.metaKey || event.type === 'mousedown' || event.type.startsWith('touch');
+            })
+            .on("zoom", function(event) {
+                vis.zoomed(event);
+            });
+
+        // Create a zoom area that covers the chart (add last so it's on top)
+        vis.zoomArea = vis.svg.append("rect")
+            .attr("class", "zoom-area")
+            .attr("width", vis.width)
+            .attr("height", vis.height)
+            .style("fill", "none")
+            .style("pointer-events", "all")
+            .style("cursor", "move")
+            .call(vis.zoom);
+
+        // Double-click to reset zoom
+        vis.zoomArea.on("dblclick.zoom", function() {
+            vis.resetZoom();
+        });
+
+        // ===== Add Interactive Color Legend (AFTER zoom area so it's on top) =====
         // Legend position: top right of y-axis
         const legendSpacing = 28;
 
@@ -299,38 +336,6 @@ class plotChart {
             .on("mouseout", function() {
                 d3.select(this).style("fill", "#888");
             });
-
-        // Initialize zoom behavior now that dimensions are set
-        vis.zoom = d3.zoom()
-            .scaleExtent([0.8, 5]) // More conservative zoom range
-            .translateExtent([[0, 0], [vis.width, vis.height]]) // Keep within chart bounds
-            .extent([[0, 0], [vis.width, vis.height]])
-            .filter(function(event) {
-                // Allow zoom only with:
-                // - Ctrl/Cmd + scroll (standard zoom gesture)
-                // - Mouse drag (pan)
-                // - Touch events
-                // This prevents accidental zoom on normal scrolling
-                return event.ctrlKey || event.metaKey || event.type === 'mousedown' || event.type.startsWith('touch');
-            })
-            .on("zoom", function(event) {
-                vis.zoomed(event);
-            });
-
-        // Create a zoom area that covers the chart (add last so it's on top)
-        vis.zoomArea = vis.svg.append("rect")
-            .attr("class", "zoom-area")
-            .attr("width", vis.width)
-            .attr("height", vis.height)
-            .style("fill", "none")
-            .style("pointer-events", "all")
-            .style("cursor", "move")
-            .call(vis.zoom);
-
-        // Double-click to reset zoom
-        vis.zoomArea.on("dblclick.zoom", function() {
-            vis.resetZoom();
-        });
     }
 
 
@@ -398,14 +403,23 @@ class plotChart {
                     const x = xScale(d.Released_Year);
                     const y = yScale(d.Gross);
 
-                    // Calculate label position based on original text anchor logic
+                    // During zoom, keep label centered on the dot's x position
+                    // Only apply edge anchoring when the label would actually go off screen
                     let labelX = x;
-                    if (d.textAnchor) {
-                        if (d.textAnchor === "start") {
-                            labelX = 5;
-                        } else if (d.textAnchor === "end") {
-                            labelX = vis.width - 5;
-                        }
+                    const labelNode = this;
+                    const bbox = labelNode.getBBox();
+                    const labelWidth = bbox.width;
+
+                    // Only adjust if label would actually go off screen
+                    if (d.textAnchor === "start" && x - labelWidth/2 < 5) {
+                        labelX = 5;
+                        d3.select(this).style("text-anchor", "start");
+                    } else if (d.textAnchor === "end" && x + labelWidth/2 > vis.width - 5) {
+                        labelX = vis.width - 5;
+                        d3.select(this).style("text-anchor", "end");
+                    } else {
+                        // Center the label on the dot
+                        d3.select(this).style("text-anchor", "middle");
                     }
 
                     d3.select(this)
@@ -647,6 +661,8 @@ class plotChart {
             .attr("cy", d => vis.yScale(d.Gross))
             .attr("r", 5)
             .attr("fill", d => vis.colorScale(d.IMDB_Rating))
+            .attr("stroke", "#000")  // Add black stroke for better visibility
+            .attr("stroke-width", 0.5)
             .attr("opacity", 0);
 
         // Merge and update - interrupt ongoing transitions before updating
@@ -742,7 +758,8 @@ class plotChart {
                     .duration(200)
                     .attr("r", 5)
                     .attr("fill", d => vis.colorScale(d.IMDB_Rating))
-                    .style("stroke", "#ffffff");
+                    .attr("stroke", "#000")  // Reset to black stroke
+                    .attr("stroke-width", 0.5);
             })
             .interrupt() // Stop any ongoing transitions
             .transition("update")
@@ -917,10 +934,30 @@ class plotChart {
                 let x = vis.xScale(highestRated.Released_Year);
                 let y = vis.yScale(highestRated.Gross);
 
+                // Store first annotation position for collision detection
+                let firstAnnotationX = vis.xScale(highestGrossing.Released_Year);
+                let firstAnnotationY = vis.yScale(highestGrossing.Gross);
+                let firstAnnotateAbove = firstAnnotationY > 100;
+
                 // Determine if annotation should go above or below based on position
                 let spaceAbove = y;
                 let spaceBelow = vis.height - y;
                 let annotateAbove = spaceAbove > 100; // Need at least 100px above
+
+                // Check for collision with first annotation
+                let xDistance = Math.abs(x - firstAnnotationX);
+                let yDistance = Math.abs(y - firstAnnotationY);
+
+                // If annotations are close together, force them to opposite sides
+                if (xDistance < 150 && yDistance < 100) {
+                    // Place this annotation on opposite side of the first one
+                    annotateAbove = !firstAnnotateAbove;
+
+                    // If we can't place it on opposite side (not enough space), offset horizontally
+                    if ((annotateAbove && spaceAbove < 70) || (!annotateAbove && spaceBelow < 70)) {
+                        annotateAbove = spaceAbove > spaceBelow;
+                    }
+                }
 
                 // Position annotation closer to point (8px clearance for better visual connection)
                 let lineY1, lineY2, labelY;

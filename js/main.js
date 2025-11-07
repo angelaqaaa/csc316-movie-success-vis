@@ -65,6 +65,9 @@ function loadData() {
 
             // Reset legend filters too
             myChart.resetLegend();
+
+            // Reset zoom to default view
+            myChart.resetZoom();
         });
 
         // Setup reset timeline button (new)
