@@ -17,29 +17,6 @@
     <div class="container">
          <!-- header Section： drop down menu , title -->
         <div class="header-section">
-            <div class="controls-group">
-                <div class="dropdown">
-                    <button class="btn btn-secondary" type="button" id="genreDropdownButton" data-bs-toggle="dropdown" aria-expanded="false">
-                        <span id="dropdown-text">Movie Genres</span>
-                        <span class="dropdown-arrow">▼</span>
-                    </button>
-                    <ul class="dropdown-menu" id="genre-dropdown" aria-labelledby="genreDropdownButton">
-                        <li>
-                            <div class="dropdown-item">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="select-all" checked>
-                                    <label class="form-check-label" for="select-all">All Genres</label>
-                                </div>
-                            </div>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <!-- Genre options will be dynamically generated -->
-                    </ul>
-                </div>
-                <button id="reset-filters" class="btn btn-outline-danger btn-sm reset-btn">
-                    <span>↻</span> Reset All
-                </button>
-            </div>
             <div class="title-section">
                 <h1 class="title">Commercial Success Of IMDB Top 1000 Movies</h1>
                 <p class="subtitle">Exploring Revenue, Ratings, and Genre Trends Across Decades</p>
@@ -51,13 +28,44 @@
             <p><strong>How to explore:</strong> Select genres from dropdown • Drag on timeline to filter years • Double-click timeline to reset year filter • Hover over dots for movie details</p>
         </div>
 
+        <div class = "controls-stats-panel">
+             <!-- controls-group -->
+
+        <div class="controls-group">
+            <div class="dropdown">
+                <button class="btn btn-secondary" type="button" id="genreDropdownButton" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span id="dropdown-text">Movie Genres</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                <ul class="dropdown-menu" id="genre-dropdown" aria-labelledby="genreDropdownButton">
+                    <li>
+                        <div class="dropdown-item">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="select-all" checked>
+                                <label class="form-check-label" for="select-all">All Genres</label>
+                            </div>
+                        </div>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <!-- Genre options will be dynamically generated -->
+                </ul>
+            </div>
+            <button id="reset-filters" class="btn btn-outline-danger btn-sm reset-btn">
+                <span>↻</span> Reset All
+            </button>
+        </div>
+
         <!-- Statistics Panel -->
+         
         <div class="stats-panel">
+  
+            
             <div class="stat-item">
                 <span class="stat-label">Movies:</span>
                 <span id="movie-count" class="stat-value">0</span>
             </div>
             <div class="stat-item">
+
                 <span class="stat-label">Avg Revenue:</span>
                 <span id="avg-gross" class="stat-value">$0M</span>
             </div>
@@ -67,6 +75,9 @@
             </div>
         </div>
 
+
+        </div>
+       
         <!-- Loading Indicator -->
         <div id="loading-indicator" class="loading-indicator">
             <div class="loading-spinner"></div>
@@ -75,12 +86,13 @@
 
         <!-- Main Visualization: visualization, slider chart -->
         <div id="visualization-content" class="visualization-section" style="display: none;">
-            <div class="slider-section">
-                <svg id="slider-chart"></svg>
-            </div>
+    
 
             <div class="main-chart-section">
                 <svg id="main-chart"></svg>
+            </div>
+            <div class="slider-section">
+                <svg id="slider-chart"></svg>
             </div>
         </div>
 

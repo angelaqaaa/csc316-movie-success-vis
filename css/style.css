@@ -39,7 +39,7 @@
   .controls-group {
     display: flex;
     align-items: center;
-    gap: 15px;
+    margin-right: 200px;
   }
 
   .title-section {
@@ -83,7 +83,7 @@
    /* ===== Dropdown ===== */
   .dropdown {
     position: relative;
-    margin-right: 30px;
+    margin-right: 10px;
   }
    
    .dropdown .btn {
@@ -97,7 +97,7 @@
      display: flex;
      justify-content: space-between;
      align-items: center;
-     padding: 6px 10px;
+     padding: 6px;
      font-size: 13px;
    }
    
@@ -218,19 +218,19 @@
   /* ===== Statistics Panel ===== */
   .stats-panel {
     display: flex;
-    justify-content: center;
     gap: 5px;
-    background-color: #1a1a1a;
-    padding: 5px 5px;
-    margin-bottom: 5px;
+    /* background-color: #1a1a1a; */
+    padding: 5px;
     border-radius: 4px;
     flex-wrap: wrap;
+    justify-content: center;
   }
 
   .stat-item {
     display: flex;
-    align-items: center;
+    justify-content: center;
     gap: 8px;
+    padding:5px
   }
 
   .stat-label {
@@ -243,6 +243,12 @@
     font-size: 15px;
     color: #e50914;
     font-weight: 600;
+  }
+
+  .controls-stats-panel{
+    display:flex;
+    flex-wrap: wrap;
+    margin: 8px
   }
 
   /* ===== Featured Movies ===== */
@@ -362,16 +368,15 @@
     background-color: #111;
     border-radius: 8px;
     padding: 20px;
-    flex: 1;
-    display: flex;
+    /* flex: 1;
+    display: flex; */
     flex-direction: column;
     min-height: 0;
   }
   
   .slider-section {
-    margin-bottom: 5px;
-    padding: 5px;
-    height: 170px;
+    padding: 10px;
+    height: 150px;
     background-color: #1a1a1a;
     border-radius: 8px;
     overflow-x: visible;
@@ -384,7 +389,7 @@
   #slider-chart {
     width: 100%;
     max-width: 100%;
-    height: 160px;
+    height: 150px;
     background-color: transparent;
     display: block;
   }
@@ -394,13 +399,11 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 0;
   }
 
   #main-chart {
     width: 100%;
     height: 100%;
-    min-height: 400px;
     background-color: transparent;
     display: block;
     flex: 1;
@@ -429,6 +432,12 @@
   .axis .domain {
     stroke: #444444;
   }
+
+.axis-break {
+    stroke: #cccccc;
+    stroke-width: 2px;
+    fill: none;
+}
 
   .legend text {
     fill: #cccccc;
@@ -637,19 +646,11 @@
     }
 
     .visualization-section {
-      padding: 10px;
-    }
-
-    .slider-section {
-      height: 140px;
+      padding: 5px;
     }
 
     #slider-chart {
-      height: 130px;
-    }
-
-    #main-chart {
-      min-height: 300px;
+      height: 80px;
     }
   }
 
@@ -662,15 +663,4 @@
       width: 120px;
     }
 
-    .slider-section {
-      height: 120px;
-    }
-
-    #slider-chart {
-      height: 110px;
-    }
-
-    #main-chart {
-      min-height: 250px;
-    }
   }
