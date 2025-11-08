@@ -520,6 +520,12 @@
     stroke: #444444;
   }
 
+  .axis-break {
+    stroke: #cccccc;
+    stroke-width: 2px;
+    fill: none;
+  }
+
   .legend text {
     fill: #cccccc;
     font-size: 12px;
