@@ -101,6 +101,10 @@ class plotChart {
     initMainChart() {
         let vis = this;
 
+        // Define color palette (color-blind friendly)
+        vis.highColor = "#ff2919ff"; // Red for high ratings
+        vis.lowColor = "#005AB5";    // Blue for low ratings
+
         vis.margin = { top: 10, right: 30, bottom: 50, left: 70 };
 
         // Store original scales for zoom reset
@@ -409,13 +413,13 @@ class plotChart {
             .attr("type", "range")
             .attr("id", "rating-threshold-slider")
             .attr("class", "rating-threshold-slider")
-            .attr("min", vis.ratingExtent[0])
-            .attr("max", vis.ratingExtent[1])
+            .attr("min", vis.ratingExtent[0] - 0.1)
+            .attr("max", vis.ratingExtent[1] + 0.1)
             .attr("step", 0.1)
             .attr("value", vis.ratingSplit)
             .attr("aria-label", "Rating split threshold")
-            .attr("aria-valuemin", vis.ratingExtent[0])
-            .attr("aria-valuemax", vis.ratingExtent[1])
+            .attr("aria-valuemin", vis.ratingExtent[0] - 0.1)
+            .attr("aria-valuemax", vis.ratingExtent[1] + 0.1)
             .attr("aria-valuenow", vis.ratingSplit)
             .attr("aria-valuetext", `High if rating ≥ ${vis.ratingSplit.toFixed(1)}, Low otherwise`)
             .style("width", "100%")
@@ -811,6 +815,9 @@ class plotChart {
         const defaultThreshold = 8.0;
         vis.ratingSplit = Math.max(vis.ratingExtent[0], Math.min(defaultThreshold, vis.ratingExtent[1]));
 
+        // Update color scale domain with new threshold
+        vis.colorScale.domain([vis.ratingSplit]);
+
         // Update threshold slider
         d3.select("#rating-threshold-slider").property("value", vis.ratingSplit);
 
@@ -844,12 +851,49 @@ class plotChart {
             .attr("aria-valuetext", `High if rating ≥ ${vis.ratingSplit.toFixed(1)}, Low otherwise`);
     }
 
-    // Show empty state overlay when both bands are hidden
+    // Show empty state overlay with context-aware message
     showEmptyStateOverlay() {
         let vis = this;
 
         // Remove existing overlay if present
         d3.select("#empty-state-overlay").remove();
+
+        // Detect the reason for empty state
+        let message1, message2, resetAction;
+
+        if (vis.selectedGenres.size === 0) {
+            // No genres selected
+            message1 = "No genres selected.";
+            message2 = 'Select genres from the dropdown or <span class="reset-link">reset all filters</span>.';
+            resetAction = () => {
+                // Reset all filters (same as Reset All button)
+                vis.selectedGenres.clear();
+                vis.genres.forEach(genre => vis.selectedGenres.add(genre));
+                d3.select("#select-all").property("checked", true);
+                d3.selectAll("#genre-dropdown input[type='checkbox']").property("checked", true);
+                d3.select("#dropdown-text").text("All Genres");
+                vis.wrangleData();
+            };
+        } else if (vis.visibleRatingBands.size === 0) {
+            // No rating bands visible (both hidden)
+            message1 = "No rating bands are visible.";
+            message2 = 'Turn a band on in the legend or <span class="reset-link">reset legend</span>.';
+            resetAction = () => vis.resetLegend();
+        } else {
+            // Other cases (e.g., year range filter, or slider at extreme with only band hidden)
+            message1 = "No movies match the current filters.";
+            message2 = 'Adjust filters or <span class="reset-link">reset all</span>.';
+            resetAction = () => {
+                // Full reset (same as Reset All button in main.js)
+                vis.selectedGenres.clear();
+                vis.genres.forEach(genre => vis.selectedGenres.add(genre));
+                d3.select("#select-all").property("checked", true);
+                d3.selectAll("#genre-dropdown input[type='checkbox']").property("checked", true);
+                d3.select("#dropdown-text").text("All Genres");
+                vis.resetLegend();
+                // Note: Can't reset timeline from here without reference to myTimeline
+            };
+        }
 
         // Create overlay
         const overlay = d3.select(".main-chart-section")
@@ -859,14 +903,12 @@ class plotChart {
             .style("opacity", 0);
 
         overlay.append("p")
-            .text("No rating bands are visible.");
+            .text(message1);
 
         overlay.append("p")
-            .html('Turn a band on in the legend or <span class="reset-link">reset legend</span>.')
+            .html(message2)
             .select(".reset-link")
-            .on("click", function() {
-                vis.resetLegend();
-            });
+            .on("click", resetAction);
 
         // Fade in
         overlay.transition()
@@ -1075,19 +1117,13 @@ class plotChart {
     updateVis() {
         let vis = this;
 
-        // Check if both rating bands are hidden (empty due to visibility toggle)
-        const bothBandsHidden = vis.visibleRatingBands.size === 0;
-
         if (vis.displayData.length === 0) {
             vis.chartArea.selectAll(".dot").remove();
             vis.svg.selectAll(".annotation-group").remove(); // Clear annotations when no data
 
-            // Show empty state overlay if both bands are hidden
-            if (bothBandsHidden) {
-                vis.showEmptyStateOverlay();
-            } else {
-                vis.hideEmptyStateOverlay();
-            }
+            // Show empty state overlay whenever no data is visible
+            // (both bands hidden manually OR slider at extreme with only populated band hidden)
+            vis.showEmptyStateOverlay();
             return;
         }
 
