@@ -18,6 +18,11 @@ class Timeline {
         this.hoveredYear = null; // Track currently hovered year
         this.animationFrame = null; // For throttling
 
+        // Lock state management for click-to-lock feature
+        this.lockedYear = null; // Currently locked year (null if not locked)
+        this.graceTimer = null; // Timer for 700ms grace period
+        this.isLocked = false; // Lock state flag
+
         this.initVis();
     }
 
@@ -36,10 +41,14 @@ class Timeline {
         vis.height = 120 - vis.margin.top - vis.margin.bottom;
 
         // SVG drawing area
-        vis.svg = d3.select("#" + vis.parentElement)
+        let svgElement = d3.select("#" + vis.parentElement)
             .attr("width", vis.width + vis.margin.left + vis.margin.right)
             .attr("height", vis.height + vis.margin.top + vis.margin.bottom)
-            .append("g")
+            .attr("tabindex", "0") // Make focusable for keyboard navigation
+            .attr("role", "slider") // Semantic role
+            .attr("aria-label", "Timeline year selector");
+
+        vis.svg = svgElement.append("g")
             .attr("transform", `translate(${vis.margin.left}, ${vis.margin.top})`);
 
         // Scales
@@ -103,6 +112,15 @@ class Timeline {
             .attr("stroke-width", 1)
             .attr("stroke-dasharray", "3,3");
 
+        // Add background rectangle for year label (for better readability)
+        vis.hairlineLabelBg = vis.hairlineGroup.append("rect")
+            .attr("y", -8)
+            .attr("height", 16)
+            .attr("rx", 3)
+            .attr("fill", "rgba(0, 0, 0, 0.85)")
+            .attr("stroke", "#e50914")
+            .attr("stroke-width", 1);
+
         vis.hairlineLabel = vis.hairlineGroup.append("text")
             .attr("y", 5)
             .attr("text-anchor", "middle")
@@ -110,16 +128,71 @@ class Timeline {
             .attr("font-size", "11px")
             .attr("font-weight", "600");
 
+        // Add lock icon (hidden by default, shown when locked)
+        vis.lockIcon = vis.hairlineGroup.append("text")
+            .attr("class", "lock-icon")
+            .attr("y", 5)
+            .attr("x", 25) // Position to the right of year label
+            .attr("text-anchor", "start")
+            .attr("fill", "#e50914")
+            .attr("font-size", "10px")
+            .style("opacity", 0)
+            .style("pointer-events", "none")
+            .text("🔒");
+
+        // Add clear button (hidden by default, shown when locked)
+        vis.clearButton = vis.hairlineGroup.append("g")
+            .attr("class", "clear-button")
+            .style("opacity", 0)
+            .style("cursor", "pointer")
+            .on("click", function(event) {
+                event.stopPropagation(); // Prevent triggering timeline click
+                vis.clearLock();
+            });
+
+        // Clear button background circle
+        vis.clearButton.append("circle")
+            .attr("cx", 45)
+            .attr("cy", 1)
+            .attr("r", 8)
+            .attr("fill", "rgba(229, 9, 20, 0.2)")
+            .attr("stroke", "#e50914")
+            .attr("stroke-width", 1);
+
+        // Clear button X text
+        vis.clearButton.append("text")
+            .attr("x", 45)
+            .attr("y", 5)
+            .attr("text-anchor", "middle")
+            .attr("fill", "#e50914")
+            .attr("font-size", "12px")
+            .attr("font-weight", "700")
+            .style("pointer-events", "none")
+            .text("×");
+
         // Add hover tracking - attach to SVG to avoid blocking brush
         // The hairline will appear but brush interactions will still work
         vis.svg
             .on("mousemove.highlight", function(event) {
+                // Cancel grace timer if mouse re-enters timeline
+                if (vis.graceTimer) {
+                    clearTimeout(vis.graceTimer);
+                    vis.graceTimer = null;
+                }
+
+                // Disable hover when locked (simpler mental model)
+                if (vis.isLocked) return;
+
                 // Throttle with requestAnimationFrame
                 if (vis.animationFrame) return;
 
                 vis.animationFrame = requestAnimationFrame(() => {
                     const [mouseX] = d3.pointer(event, this);
-                    const hoveredYear = Math.round(vis.xScale.invert(mouseX));
+                    let hoveredYear = Math.round(vis.xScale.invert(mouseX));
+
+                    // Clamp year to scale domain to prevent showing years outside axis range
+                    const [minDomain, maxDomain] = vis.xScale.domain();
+                    hoveredYear = Math.max(minDomain, Math.min(maxDomain, hoveredYear));
 
                     // Update hairline position
                     const xPos = vis.xScale(hoveredYear);
@@ -128,6 +201,12 @@ class Timeline {
                         .style("opacity", 1);
 
                     vis.hairlineLabel.text(hoveredYear);
+
+                    // Update background rectangle dimensions based on text width
+                    const labelBBox = vis.hairlineLabel.node().getBBox();
+                    vis.hairlineLabelBg
+                        .attr("x", -labelBBox.width / 2 - 4)
+                        .attr("width", labelBBox.width + 8);
 
                     // Notify main chart
                     if (vis.onYearHover && vis.hoveredYear !== hoveredYear) {
@@ -145,15 +224,151 @@ class Timeline {
                     vis.animationFrame = null;
                 }
 
-                // Hide hairline
-                vis.hairlineGroup.style("opacity", 0);
+                // If locked, don't clear (locked state persists)
+                if (vis.isLocked) return;
 
-                // Clear hover state
-                vis.hoveredYear = null;
-                if (vis.onYearHover) {
-                    vis.onYearHover(null);
+                // Start 550ms grace period instead of immediate clear
+                // This allows user to move cursor to scatter area
+                vis.graceTimer = setTimeout(() => {
+                    // Hide hairline
+                    vis.hairlineGroup.style("opacity", 0);
+
+                    // Clear hover state
+                    vis.hoveredYear = null;
+                    if (vis.onYearHover) {
+                        vis.onYearHover(null);
+                    }
+
+                    vis.graceTimer = null;
+                }, 550);
+            })
+            .on("click.lock", function(event) {
+                // Ignore click if brushing (avoid conflicts)
+                const brushSelection = d3.brushSelection(vis.brushGroup.node());
+                if (brushSelection) return;
+
+                const [mouseX] = d3.pointer(event, this);
+                let clickedYear = Math.round(vis.xScale.invert(mouseX));
+
+                // Clamp year to scale domain
+                const [minDomain, maxDomain] = vis.xScale.domain();
+                clickedYear = Math.max(minDomain, Math.min(maxDomain, clickedYear));
+
+                // Toggle lock state
+                if (vis.isLocked && vis.lockedYear === clickedYear) {
+                    // Unlock: clicking the same year again
+                    vis.clearLock();
+                } else {
+                    // Lock: new year or first lock
+                    vis.lockYear(clickedYear);
+                }
+            })
+            .on("dblclick.lock", function(event) {
+                // Double-click to lock works even when brush is active
+                // This allows locking a year when brushed (since single click is used for brush)
+                event.preventDefault(); // Prevent default double-click behavior
+
+                const [mouseX] = d3.pointer(event, this);
+                let clickedYear = Math.round(vis.xScale.invert(mouseX));
+
+                // Clamp year to scale domain
+                const [minDomain, maxDomain] = vis.xScale.domain();
+                clickedYear = Math.max(minDomain, Math.min(maxDomain, clickedYear));
+
+                // Toggle lock state
+                if (vis.isLocked && vis.lockedYear === clickedYear) {
+                    // Unlock: double-clicking the same year again
+                    vis.clearLock();
+                } else {
+                    // Lock: new year or first lock
+                    vis.lockYear(clickedYear);
                 }
             });
+
+        // Add keyboard navigation
+        svgElement.on("keydown", function(event) {
+            // Get year range from data
+            if (!vis.displayData || vis.displayData.length === 0) return;
+
+            const minYear = d3.min(vis.displayData, d => d.year);
+            const maxYear = d3.max(vis.displayData, d => d.year);
+
+            let currentYear = vis.isLocked ? vis.lockedYear : vis.hoveredYear;
+
+            // If no current year, start at middle of range
+            if (!currentYear) {
+                currentYear = Math.round((minYear + maxYear) / 2);
+            }
+
+            let handled = false;
+            let newYear = currentYear;
+
+            switch(event.key) {
+                case "ArrowLeft":
+                    // Move to previous year
+                    newYear = Math.max(minYear, currentYear - 1);
+                    handled = true;
+                    break;
+
+                case "ArrowRight":
+                    // Move to next year
+                    newYear = Math.min(maxYear, currentYear + 1);
+                    handled = true;
+                    break;
+
+                case "Enter":
+                case " ": // Space
+                    // Toggle lock on current year
+                    if (vis.isLocked) {
+                        vis.clearLock();
+                    } else if (currentYear) {
+                        vis.lockYear(currentYear);
+                    }
+                    handled = true;
+                    break;
+
+                case "Escape":
+                    // Clear lock
+                    if (vis.isLocked) {
+                        vis.clearLock();
+                    }
+                    handled = true;
+                    break;
+            }
+
+            if (handled) {
+                event.preventDefault();
+
+                // Update year if arrow key was pressed
+                if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && newYear !== currentYear) {
+                    if (vis.isLocked) {
+                        // Move lock to new year
+                        vis.lockYear(newYear);
+                    } else {
+                        // Show hover preview at new year
+                        const xPos = vis.xScale(newYear);
+                        vis.hairlineGroup
+                            .attr("transform", `translate(${xPos}, 0)`)
+                            .style("opacity", 1);
+
+                        vis.hairlineLabel.text(newYear);
+
+                        // Update background rectangle dimensions based on text width
+                        const labelBBox = vis.hairlineLabel.node().getBBox();
+                        vis.hairlineLabelBg
+                            .attr("x", -labelBBox.width / 2 - 4)
+                            .attr("width", labelBBox.width + 8);
+
+                        vis.hoveredYear = newYear;
+
+                        // Notify chart
+                        if (vis.onYearHover) {
+                            vis.onYearHover(newYear);
+                        }
+                    }
+                }
+            }
+        });
 
         // Initialize brush component (AFTER hover area so brush is on top and clickable)
         vis.brush = d3.brushX()
@@ -178,13 +393,8 @@ class Timeline {
         vis.brushGroup = vis.svg.append("g")
             .attr("class", "brush");
 
-        // Add double-click to reset brush selection
-        vis.svg.on("dblclick", function() {
-            vis.brushGroup.call(vis.brush.move, null);
-            if (vis.onBrush) {
-                vis.onBrush(null);
-            }
-        });
+        // Double-click is used for lock/unlock (see .on("dblclick.lock") above)
+        // Brush reset is handled by the "Reset Timeline" button
 
         // Initial data processing
         vis.wrangleData();
@@ -307,46 +517,175 @@ class Timeline {
 
         if (year === null) return;
 
-        // Create pulse marker at the year position
-        const xPos = vis.xScale(year);
-        const yPos = vis.height / 2;
+        // Find the data point for this year on the timeline
+        const dataPoint = vis.displayData.find(d => d.year === year);
 
-        // Add pulsing circle marker
+        // If no data for this year, don't show pulse
+        if (!dataPoint) return;
+
+        // Position pulse at the actual data point on the trend line
+        const xPos = vis.xScale(year);
+        const yPos = vis.yScale(dataPoint.avgGross);
+
+        // Add expanding circle marker at the data point (single animation, no auto-remove)
         vis.svg.append("circle")
             .attr("class", "year-pulse")
             .attr("cx", xPos)
             .attr("cy", yPos)
             .attr("r", 0)
-            .attr("fill", "none")
+            .attr("fill", "#e50914")
+            .attr("fill-opacity", 0.3)
             .attr("stroke", "#e50914")
             .attr("stroke-width", 2)
             .style("pointer-events", "none")
             .transition()
             .duration(400)
             .ease(d3.easeCircleOut)
-            .attr("r", 15)
-            .attr("stroke-width", 1)
-            .attr("opacity", 0.8)
+            .attr("r", 12)
+            .attr("stroke-width", 2)
+            .attr("fill-opacity", 0.2)
+            .attr("opacity", 0.6);
+            // No auto-remove - will be cleared by next highlightYearOnTimeline call or explicit null
+
+        // Add a persistent dot at the data point (no fade)
+        vis.svg.append("circle")
+            .attr("class", "year-pulse")
+            .attr("cx", xPos)
+            .attr("cy", yPos)
+            .attr("r", 0)
+            .attr("fill", "#e50914")
+            .attr("stroke", "#ffffff")
+            .attr("stroke-width", 1.5)
+            .style("pointer-events", "none")
             .transition()
             .duration(200)
-            .attr("opacity", 0)
-            .remove();
+            .attr("r", 4)
+            .attr("opacity", 1);
+            // No auto-remove - will persist until cleared
 
-        // Add year label highlight
+        // Add year label above the data point (no fade)
         vis.svg.append("text")
             .attr("class", "year-pulse")
             .attr("x", xPos)
-            .attr("y", yPos)
+            .attr("y", yPos - 20)
             .attr("text-anchor", "middle")
-            .attr("dominant-baseline", "middle")
             .attr("fill", "#e50914")
-            .attr("font-size", "12px")
+            .attr("font-size", "11px")
             .attr("font-weight", "700")
             .style("pointer-events", "none")
+            .attr("opacity", 0)
             .text(year)
             .transition()
-            .duration(600)
-            .attr("opacity", 0)
-            .remove();
+            .duration(200)
+            .attr("opacity", 1);
+            // No auto-remove - will persist until cleared
+    }
+
+    // Lock a specific year (click-to-lock functionality)
+    lockYear(year) {
+        let vis = this;
+
+        // Clear any pending grace timer
+        if (vis.graceTimer) {
+            clearTimeout(vis.graceTimer);
+            vis.graceTimer = null;
+        }
+
+        // Update lock state
+        vis.isLocked = true;
+        vis.lockedYear = year;
+        vis.hoveredYear = year;
+
+        // Position hairline at locked year
+        const xPos = vis.xScale(year);
+        vis.hairlineGroup
+            .attr("transform", `translate(${xPos}, 0)`)
+            .style("opacity", 1);
+
+        // Update hairline to solid stroke (locked state)
+        vis.hairline
+            .attr("stroke-dasharray", "none")
+            .attr("stroke-width", 2);
+
+        // Update label
+        vis.hairlineLabel.text(year);
+
+        // Update background rectangle dimensions based on text width
+        const labelBBox = vis.hairlineLabel.node().getBBox();
+        vis.hairlineLabelBg
+            .attr("x", -labelBBox.width / 2 - 4)
+            .attr("width", labelBBox.width + 8);
+
+        // Show lock icon and clear button
+        vis.lockIcon
+            .transition()
+            .duration(200)
+            .style("opacity", 1);
+
+        vis.clearButton
+            .transition()
+            .duration(200)
+            .style("opacity", 1)
+            .style("pointer-events", "all");
+
+        // Notify main chart to highlight
+        if (vis.onYearHover) {
+            vis.onYearHover(year);
+        }
+
+        // Count movies in this year for announcement
+        const movieCount = vis.data.filter(d => d.Released_Year === year).length;
+        const filmText = movieCount === 1 ? 'film' : 'films';
+        vis.announce(`Year ${year} highlighted, ${movieCount} ${filmText}`);
+
+        console.log(`Locked year: ${year}`);
+    }
+
+    // Clear locked state
+    clearLock() {
+        let vis = this;
+
+        // Update lock state
+        vis.isLocked = false;
+        vis.lockedYear = null;
+        vis.hoveredYear = null;
+
+        // Reset hairline to dashed stroke (hover state)
+        vis.hairline
+            .attr("stroke-dasharray", "3,3")
+            .attr("stroke-width", 1);
+
+        // Hide lock icon and clear button
+        vis.lockIcon
+            .transition()
+            .duration(200)
+            .style("opacity", 0);
+
+        vis.clearButton
+            .transition()
+            .duration(200)
+            .style("opacity", 0)
+            .style("pointer-events", "none");
+
+        // Hide hairline
+        vis.hairlineGroup.style("opacity", 0);
+
+        // Clear highlights on chart
+        if (vis.onYearHover) {
+            vis.onYearHover(null);
+        }
+
+        // Announce to screen readers
+        vis.announce('Highlight cleared');
+
+        console.log("Cleared lock");
+    }
+
+    // Announce action to screen readers via ARIA live region
+    announce(message) {
+        const announcer = document.getElementById('timeline-announcer');
+        if (announcer) {
+            announcer.textContent = message;
+        }
     }
 }

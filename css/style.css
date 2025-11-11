@@ -84,12 +84,19 @@
     justify-content: space-between;
     gap: 30px;
     flex-wrap: wrap;
+    position: relative;
   }
 
   .filter-group {
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+
+  .filter-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
   }
 
   .filter-label {
@@ -99,28 +106,50 @@
     margin: 0;
   }
 
-  .filter-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-
   .filter-actions .btn {
     font-size: 13px;
     padding: 6px 12px;
     font-weight: 500;
   }
 
-  #reset-timeline {
-    background-color: transparent;
-    border-color: #666;
-    color: #aaa;
+  /* Reset Timeline Button - Positioned as overlay on timeline */
+  .timeline-reset-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(0, 0, 0, 0.9);
+    border: 1.5px solid #888;
+    border-radius: 4px;
+    color: #bbb;
+    padding: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+    line-height: 1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  #reset-timeline:hover {
-    background-color: rgba(102, 102, 102, 0.1);
+  .timeline-reset-btn:hover {
+    background-color: rgba(229, 9, 20, 0.15);
     border-color: #e50914;
     color: #fff;
+    transform: scale(1.08);
+    box-shadow: 0 4px 12px rgba(229, 9, 20, 0.4);
+  }
+
+  .timeline-reset-btn:focus {
+    outline: 2px solid #e50914;
+    outline-offset: 2px;
+  }
+
+  .slider-section {
+    position: relative;
   }
 
   #reset-filters {
@@ -777,6 +806,13 @@
     stroke-opacity: 0.3 !important;
   }
 
+  /* Active dot (keyboard navigation with roving tabindex) */
+  .dot.is-active {
+    opacity: 1 !important;
+    outline: 2px solid #e50914;
+    outline-offset: 2px;
+  }
+
   /* Timeline hairline and pulse markers */
   .timeline-hairline {
     pointer-events: none;
@@ -993,4 +1029,17 @@
     .dropdown .btn {
       width: 120px;
     }
+  }
+
+  /* Screen reader only class - visually hidden but accessible to assistive technology */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
   }

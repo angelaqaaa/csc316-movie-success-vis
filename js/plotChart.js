@@ -15,6 +15,10 @@ class plotChart {
         this.yBreakDetailed = 500 * million; // 0-500M detailed segment
         this.yUpperBoundBase = 1000 * million; // Default compressed segment upper bound (1B)
 
+        // Track active dot for keyboard navigation (roving tabindex pattern)
+        this.activeDotIndex = null; // Index of currently focused dot
+        this.isContainerFocused = false; // Track if container has focus
+
         this.initVis();
     }
 
@@ -126,7 +130,10 @@ class plotChart {
         // Create main SVG with zoom area
         vis.svgContainer = d3.select("#main-chart")
             .attr("width", vis.width + vis.margin.left + vis.margin.right)
-            .attr("height", vis.height + vis.margin.top + vis.margin.bottom);
+            .attr("height", vis.height + vis.margin.top + vis.margin.bottom)
+            .attr("tabindex", "0") // Make focusable for keyboard navigation (roving tabindex)
+            .attr("role", "application") // Indicate this handles its own keyboard navigation
+            .attr("aria-label", "Scatter plot of movie gross revenue. Use arrow keys to navigate between movies.");
 
         vis.svg = vis.svgContainer.append("g")
             .attr("transform", `translate(${vis.margin.left}, ${vis.margin.top})`);
@@ -176,6 +183,42 @@ class plotChart {
         // Create group for chart content AFTER axes so dots appear on top
         vis.chartArea = vis.svg.append("g")
             .attr("clip-path", "url(#chart-clip)");
+
+        // Add mouseleave handler to clear timeline pulse when mouse exits scatter area
+        vis.chartArea.on("mouseleave", function() {
+            if (vis.timeline) {
+                vis.timeline.highlightYearOnTimeline(null);
+            }
+        });
+
+        // Add keyboard navigation (roving tabindex pattern)
+        vis.svgContainer.on("keydown", function(event) {
+            vis.handleKeyboardNavigation(event);
+        });
+
+        // Track focus state
+        vis.svgContainer.on("focus", function() {
+            vis.isContainerFocused = true;
+        });
+
+        // Clear active dot when container loses focus
+        vis.svgContainer.on("blur", function() {
+            vis.isContainerFocused = false;
+            if (vis.activeDotIndex !== null) {
+                // Remove active styling and reset appearance to normal
+                vis.chartArea.selectAll(".dot")
+                    .classed("is-active", false)
+                    .attr("r", 5)
+                    .style("stroke", "#ffffff")
+                    .style("stroke-width", "1px");
+
+                vis.activeDotIndex = null;
+                // Clear timeline pulse
+                if (vis.timeline) {
+                    vis.timeline.highlightYearOnTimeline(null);
+                }
+            }
+        });
 
         // Axis labels
         vis.svg.append("text")
@@ -263,7 +306,7 @@ class plotChart {
                 this.blur(); // Remove focus after click
                 vis.toggleRatingBand(d.id);
             })
-            .on("keypress", function(event, d) {
+            .on("keydown", function(event, d) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     this.blur(); // Remove focus after keypress
@@ -323,7 +366,7 @@ class plotChart {
                 this.blur(); // Remove focus after click
                 vis.resetLegend();
             })
-            .on("keypress", function(event) {
+            .on("keydown", function(event) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     this.blur(); // Remove focus after keypress
@@ -433,14 +476,14 @@ class plotChart {
             .style("cursor", "pointer")
             .style("opacity", 0)  // Start invisible
             .style("pointer-events", "none")  // Disable clicks when invisible
-            .attr("tabindex", "0")
+            .attr("tabindex", "-1")  // Start not tabbable (hidden)
             .attr("role", "button")
             .attr("aria-label", "Reset zoom and pan")
             .on("click", function() {
                 this.blur(); // Remove focus to prevent visible focus effect after button fades out
                 vis.resetZoom();
             })
-            .on("keypress", function(event) {
+            .on("keydown", function(event) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     this.blur(); // Remove focus to prevent visible focus effect after button fades out
@@ -651,12 +694,14 @@ class plotChart {
 
             if (shouldShowResetView) {
                 vis.svg.select(".reset-zoom-btn")
+                    .attr("tabindex", "0") // Make tabbable when visible
                     .transition()
                     .duration(300)
                     .style("opacity", 1)
                     .style("pointer-events", "all");
             } else {
                 vis.svg.select(".reset-zoom-btn")
+                    .attr("tabindex", "-1") // Remove from tab order when hidden
                     .transition()
                     .duration(300)
                     .style("opacity", 0)
@@ -712,6 +757,7 @@ class plotChart {
 
                 // Hide reset view button after reset completes with transition
                 vis.svg.select(".reset-zoom-btn")
+                    .attr("tabindex", "-1") // Remove from tab order when hidden
                     .transition()
                     .duration(300)
                     .style("opacity", 0)
@@ -1032,6 +1078,12 @@ class plotChart {
     wrangleData() {
         let vis = this;
 
+        // Reset keyboard navigation state when data changes
+        if (vis.activeDotIndex !== null) {
+            vis.activeDotIndex = null;
+            // Clear active styling will happen during updateVis when dots are redrawn
+        }
+
         // Start with all data
         vis.displayData = vis.data.slice();
 
@@ -1255,7 +1307,7 @@ class plotChart {
             .attr("stroke", "#ffffff")  // White stroke to match CSS
             .attr("stroke-width", 1)
             .attr("opacity", 0)
-            .attr("tabindex", 0)  // Make focusable for keyboard navigation
+            // No tabindex - using roving tabindex pattern on container
             .attr("role", "button")
             .attr("aria-label", d => `${d.Series_Title}, ${d.Released_Year}, $${(d.Gross / 1000000).toFixed(1)}M gross, ${d.IMDB_Rating}/10 rating`);
 
@@ -1277,6 +1329,18 @@ class plotChart {
 
         mergedCircles
             .on("mouseover", function (event, d) {
+                // Cancel grace timer ONLY when hovering a highlighted dot (same year)
+                if (vis.timeline && vis.timeline.graceTimer && d.Released_Year === vis.timeline.hoveredYear) {
+                    clearTimeout(vis.timeline.graceTimer);
+                    vis.timeline.graceTimer = null;
+                }
+
+                // Clear keyboard navigation active dot when mouse interaction begins
+                if (vis.activeDotIndex !== null) {
+                    vis.chartArea.selectAll(".dot").classed("is-active", false);
+                    vis.activeDotIndex = null;
+                }
+
                 // Bidirectional highlight: notify timeline of hovered year
                 if (vis.timeline) {
                     vis.timeline.highlightYearOnTimeline(d.Released_Year);
@@ -1386,9 +1450,21 @@ class plotChart {
                     .style("stroke-width", "2px");
             })
             .on("mouseout", function (event, d) {
-                // Clear timeline highlight
-                if (vis.timeline) {
-                    vis.timeline.highlightYearOnTimeline(null);
+                // Don't clear timeline pulse here - let it persist while moving between dots
+                // Pulse will be cleared by chartArea mouseleave handler
+
+                // Start grace timer to clear scatter highlights (not locked)
+                if (vis.timeline && !vis.timeline.isLocked && !vis.timeline.graceTimer) {
+                    vis.timeline.graceTimer = setTimeout(() => {
+                        // Clear scatter highlights
+                        if (vis.timeline.onYearHover) {
+                            vis.timeline.onYearHover(null);
+                        }
+                        // Hide timeline hairline
+                        vis.timeline.hairlineGroup.style("opacity", 0);
+                        vis.timeline.hoveredYear = null;
+                        vis.timeline.graceTimer = null;
+                    }, 550);
                 }
 
                 d3.select("#tooltip").classed("visible", false);
@@ -1401,32 +1477,7 @@ class plotChart {
                     .style("stroke", "#ffffff")  // Reset to white stroke to match CSS
                     .style("stroke-width", "1px");
             })
-            .on("focus", function (event, d) {
-                // Keyboard focus triggers same highlight as mouseover
-                if (vis.timeline) {
-                    vis.timeline.highlightYearOnTimeline(d.Released_Year);
-                }
-
-                d3.select(this)
-                    .transition()
-                    .duration(200)
-                    .attr("r", 8)
-                    .style("stroke", "#e50914")
-                    .style("stroke-width", "2px");
-            })
-            .on("blur", function (event, d) {
-                // Clear on blur
-                if (vis.timeline) {
-                    vis.timeline.highlightYearOnTimeline(null);
-                }
-
-                d3.select(this)
-                    .transition()
-                    .duration(200)
-                    .attr("r", 5)
-                    .style("stroke", "#ffffff")
-                    .style("stroke-width", "1px");
-            })
+            // No focus/blur handlers - using roving tabindex pattern on container
             .interrupt() // Stop any ongoing transitions
             .transition("update")
             .duration(300)
@@ -1455,6 +1506,11 @@ class plotChart {
             .attr("r", 5)
             .attr("fill", d => vis.colorScale(d.IMDB_Rating))
             .attr("opacity", 0.8);
+
+        // Re-apply locked year highlights after rendering (if timeline is locked)
+        if (vis.timeline && vis.timeline.isLocked && vis.timeline.lockedYear) {
+            vis.highlightYear(vis.timeline.lockedYear);
+        }
 
         // Add annotations for insights
         vis.drawAnnotations();
@@ -1816,5 +1872,133 @@ class plotChart {
                 }
             }
         }
+    }
+
+    // Handle keyboard navigation for roving tabindex pattern
+    handleKeyboardNavigation(event) {
+        let vis = this;
+
+        // Ignore keyboard input if container is not focused
+        if (!vis.isContainerFocused) return;
+
+        if (vis.displayData.length === 0) return;
+
+        // Sort data by year (x-axis position) for spatial navigation
+        // Secondary sort by gross (y-axis) for movies in the same year
+        const sortedByPosition = [...vis.displayData].sort((a, b) => {
+            if (a.Released_Year !== b.Released_Year) {
+                return a.Released_Year - b.Released_Year; // Earlier years first (left to right)
+            }
+            return a.Gross - b.Gross; // Lower gross first (bottom to top)
+        });
+
+        // Initialize active dot if not set (first key press) - start with earliest year
+        if (vis.activeDotIndex === null) {
+            vis.activeDotIndex = 0;
+            vis.updateActiveDot();
+            return;
+        }
+
+        // Find current dot in sorted array
+        const currentDatum = vis.displayData[vis.activeDotIndex];
+        const currentSortedIndex = sortedByPosition.findIndex(d => d === currentDatum);
+
+        let handled = false;
+        let newSortedIndex = currentSortedIndex;
+
+        switch (event.key) {
+            case "ArrowRight":
+            case "ArrowDown":
+                // Move to next dot (later year, or higher gross in same year)
+                newSortedIndex = Math.min(sortedByPosition.length - 1, currentSortedIndex + 1);
+                handled = true;
+                break;
+
+            case "ArrowLeft":
+            case "ArrowUp":
+                // Move to previous dot (earlier year, or lower gross in same year)
+                newSortedIndex = Math.max(0, currentSortedIndex - 1);
+                handled = true;
+                break;
+
+            case "Home":
+                // Jump to earliest year
+                newSortedIndex = 0;
+                handled = true;
+                break;
+
+            case "End":
+                // Jump to latest year
+                newSortedIndex = sortedByPosition.length - 1;
+                handled = true;
+                break;
+
+            case "Enter":
+            case " ": // Space
+                // "Activate" current dot - for now just keep current behavior
+                handled = true;
+                break;
+        }
+
+        if (handled) {
+            event.preventDefault();
+            if (newSortedIndex !== currentSortedIndex) {
+                // Find the new datum in the original displayData array
+                const newDatum = sortedByPosition[newSortedIndex];
+                const newIndex = vis.displayData.findIndex(d => d === newDatum);
+                vis.activeDotIndex = newIndex;
+                vis.updateActiveDot();
+            }
+        }
+    }
+
+    // Update visual styling for the active dot
+    updateActiveDot() {
+        let vis = this;
+
+        if (vis.activeDotIndex === null || vis.displayData.length === 0) return;
+
+        const activeDatum = vis.displayData[vis.activeDotIndex];
+
+        // Remove active styling from all dots
+        vis.chartArea.selectAll(".dot")
+            .classed("is-active", false)
+            .attr("r", 5)
+            .style("stroke", "#ffffff")
+            .style("stroke-width", "1px");
+
+        // Apply active styling to the current dot
+        const dots = vis.chartArea.selectAll(".dot").nodes();
+        const activeDot = d3.select(dots[vis.activeDotIndex]);
+
+        activeDot
+            .classed("is-active", true)
+            .attr("r", 8)
+            .style("stroke", "#e50914")
+            .style("stroke-width", "2px");
+
+        // Trigger timeline pulse for active dot
+        if (vis.timeline) {
+            vis.timeline.highlightYearOnTimeline(activeDatum.Released_Year);
+        }
+
+        // Update ARIA live region to announce the active movie
+        vis.announceActiveDot(activeDatum);
+    }
+
+    // Announce active dot to screen readers
+    announceActiveDot(datum) {
+        // Create or update an ARIA live region
+        let liveRegion = document.getElementById('scatter-live-region');
+        if (!liveRegion) {
+            liveRegion = document.createElement('div');
+            liveRegion.id = 'scatter-live-region';
+            liveRegion.className = 'sr-only';
+            liveRegion.setAttribute('aria-live', 'polite');
+            liveRegion.setAttribute('aria-atomic', 'true');
+            document.body.appendChild(liveRegion);
+        }
+
+        liveRegion.textContent = `${datum.Series_Title}, ${datum.Released_Year}, $${(datum.Gross / 1000000).toFixed(1)} million gross, ${datum.IMDB_Rating} out of 10 rating`;
     }
 }

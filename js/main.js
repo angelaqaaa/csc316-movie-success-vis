@@ -86,6 +86,11 @@ function loadData() {
             myTimeline.brushGroup.call(myTimeline.brush.move, null);
             myChart.yearRange = null;
 
+            // Clear timeline lock (if locked)
+            if (myTimeline.isLocked) {
+                myTimeline.clearLock();
+            }
+
             // Reset legend filters and threshold
             myChart.resetLegend();
 
@@ -99,6 +104,11 @@ function loadData() {
             // Reset timeline brush only
             myTimeline.brushGroup.call(myTimeline.brush.move, null);
             myChart.yearRange = null;
+
+            // Clear timeline lock (if locked)
+            if (myTimeline.isLocked) {
+                myTimeline.clearLock();
+            }
 
             // Update chart with current genre filters intact
             myChart.wrangleData();
