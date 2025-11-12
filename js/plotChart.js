@@ -1342,132 +1342,184 @@ class plotChart {
                     .classed("visible", true)
                     .html(tooltipContent);
 
-                // Smart positioning to keep tooltip within viewport, avoid timeline AND highlighted dots
-                const tooltipNode = tooltip.node();
-                const tooltipRect = tooltipNode.getBoundingClientRect();
-                const viewportWidth = window.innerWidth;
-                const viewportHeight = window.innerHeight;
+                // Use requestAnimationFrame to ensure highlights are painted before positioning tooltip
+                requestAnimationFrame(() => {
+                    // Smart positioning to keep tooltip within viewport, avoid timeline AND highlighted dots
+                    const tooltipNode = tooltip.node();
+                    const tooltipRect = tooltipNode.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
 
-                // Get timeline position to avoid covering it
-                const timelineElement = document.getElementById('slider-chart');
-                const timelineRect = timelineElement ? timelineElement.getBoundingClientRect() : null;
+                    // Get timeline position to avoid covering it
+                    const timelineElement = document.getElementById('slider-chart');
+                    const timelineRect = timelineElement ? timelineElement.getBoundingClientRect() : null;
 
-                // Get positions of highlighted dots to avoid covering them
-                const highlightedDots = [];
-                vis.chartArea.selectAll(".dot.is-highlighted").each(function() {
-                    const rect = this.getBoundingClientRect();
-                    highlightedDots.push({
-                        left: rect.left,
-                        right: rect.right,
-                        top: rect.top,
-                        bottom: rect.bottom,
-                        centerX: rect.left + rect.width / 2,
-                        centerY: rect.top + rect.height / 2
+                    // Get positions of highlighted dots AND the hovered dot to avoid covering them
+                    const dotsToAvoid = [];
+
+                    // Add all highlighted dots
+                    vis.chartArea.selectAll(".dot.is-highlighted").each(function() {
+                        const rect = this.getBoundingClientRect();
+                        dotsToAvoid.push({
+                            left: rect.left,
+                            right: rect.right,
+                            top: rect.top,
+                            bottom: rect.bottom,
+                            centerX: rect.left + rect.width / 2,
+                            centerY: rect.top + rect.height / 2
+                        });
                     });
-                });
 
-                // Convert cursor position to viewport coordinates (tooltip uses position: fixed)
-                const cursorX = event.clientX;
-                const cursorY = event.clientY;
+                    // Also add the currently hovered dot (with larger bounds since it's enlarged)
+                    const hoveredDotRect = this.getBoundingClientRect();
+                    dotsToAvoid.push({
+                        left: hoveredDotRect.left,
+                        right: hoveredDotRect.right,
+                        top: hoveredDotRect.top,
+                        bottom: hoveredDotRect.bottom,
+                        centerX: hoveredDotRect.left + hoveredDotRect.width / 2,
+                        centerY: hoveredDotRect.top + hoveredDotRect.height / 2
+                    });
 
-                let left = cursorX + 15;
-                let top;
+                    // Position tooltip relative to DOT (not cursor) for consistent spacing
+                    const buffer = 20; // Buffer space around dots for overlap detection
+                    const tooltipOffset = 30; // Consistent offset from dot edge (must be > buffer)
 
-                // PRIORITY 1: Avoid timeline completely
-                // If cursor is near timeline, position tooltip above timeline instead of near cursor
-                if (timelineRect) {
-                    // Use viewport-relative coordinates (timelineRect.top is already viewport-relative)
-                    const timelineTop = timelineRect.top;
+                    // Helper function to check if a position overlaps with any dots
+                    const overlapsAnyDot = (tooltipLeft, tooltipTop) => {
+                        const tooltipRight = tooltipLeft + tooltipRect.width;
+                        const tooltipBottom = tooltipTop + tooltipRect.height;
 
-                    // If cursor is within tooltip height + buffer of timeline, position above timeline
-                    if (cursorY + tooltipRect.height + 50 > timelineTop) {
-                        // Position tooltip above timeline entirely
-                        top = timelineTop - tooltipRect.height - 30;
-
-                        // If that pushes it off screen top, position at top with minimal margin
-                        if (top < 10) {
-                            top = 10;
+                        for (const dot of dotsToAvoid) {
+                            const overlapsH = tooltipLeft < dot.right + buffer && tooltipRight > dot.left - buffer;
+                            const overlapsV = tooltipTop < dot.bottom + buffer && tooltipBottom > dot.top - buffer;
+                            if (overlapsH && overlapsV) {
+                                return true;
+                            }
                         }
-                    } else {
-                        // Cursor is far enough from timeline, use normal positioning
-                        top = cursorY - 28;
-                    }
-                } else {
-                    // No timeline element, use standard positioning
-                    top = cursorY - 28;
-
-                    // Standard viewport constraints
-                    if (top < 0) {
-                        top = cursorY + 15;
-                    }
-                    if (top + tooltipRect.height > viewportHeight) {
-                        top = viewportHeight - tooltipRect.height - 15;
-                    }
-                }
-
-                // Adjust horizontal position if tooltip would go off screen
-                if (left + tooltipRect.width > viewportWidth) {
-                    left = cursorX - tooltipRect.width - 15;
-                }
-
-                // PRIORITY 2: Check if tooltip would overlap highlighted dots and adjust if needed
-                const buffer = 10; // Buffer space around dots
-                let adjustmentNeeded = true;
-                let attempts = 0;
-                const maxAttempts = 4; // Try different positions
-
-                while (adjustmentNeeded && attempts < maxAttempts) {
-                    adjustmentNeeded = false;
-                    const proposedTooltipRect = {
-                        left: left,
-                        right: left + tooltipRect.width,
-                        top: top,
-                        bottom: top + tooltipRect.height
+                        return false;
                     };
 
-                    // Check overlap with each highlighted dot
-                    for (const dot of highlightedDots) {
-                        const overlapsHorizontal = proposedTooltipRect.left < dot.right + buffer &&
-                                                   proposedTooltipRect.right > dot.left - buffer;
-                        const overlapsVertical = proposedTooltipRect.top < dot.bottom + buffer &&
-                                                 proposedTooltipRect.bottom > dot.top - buffer;
+                    // Helper function to check if position is within viewport
+                    const isInViewport = (tooltipLeft, tooltipTop) => {
+                        return tooltipLeft >= 10 &&
+                               tooltipTop >= 10 &&
+                               tooltipLeft + tooltipRect.width <= viewportWidth - 10 &&
+                               tooltipTop + tooltipRect.height <= viewportHeight - 10;
+                    };
 
-                        if (overlapsHorizontal && overlapsVertical) {
-                            adjustmentNeeded = true;
+                    // Helper to check if position overlaps timeline
+                    const overlapsTimeline = (tooltipTop) => {
+                        if (!timelineRect) return false;
+                        const tooltipBottom = tooltipTop + tooltipRect.height;
+                        return tooltipBottom + 20 > timelineRect.top;
+                    };
 
-                            // Try different positions based on attempt number
-                            if (attempts === 0) {
-                                // Attempt 1: Move tooltip to the right
-                                left = dot.right + buffer + 5;
-                            } else if (attempts === 1) {
-                                // Attempt 2: Move tooltip to the left
-                                left = dot.left - tooltipRect.width - buffer - 5;
-                            } else if (attempts === 2) {
-                                // Attempt 3: Move tooltip above
-                                top = dot.top - tooltipRect.height - buffer - 5;
-                            } else if (attempts === 3) {
-                                // Attempt 4: Move tooltip below
-                                top = dot.bottom + buffer + 5;
-                            }
-                            break; // Check again with new position
+                    // Define candidate positions in priority order
+                    // All positions are relative to the DOT, not cursor, for consistent spacing
+                    const candidates = [];
+
+                    // Use the hovered dot's bounds as reference point
+                    const dotCenterX = dotsToAvoid[dotsToAvoid.length - 1].centerX;
+                    const dotCenterY = dotsToAvoid[dotsToAvoid.length - 1].centerY;
+                    const dotRight = dotsToAvoid[dotsToAvoid.length - 1].right;
+                    const dotLeft = dotsToAvoid[dotsToAvoid.length - 1].left;
+                    const dotTop = dotsToAvoid[dotsToAvoid.length - 1].top;
+                    const dotBottom = dotsToAvoid[dotsToAvoid.length - 1].bottom;
+
+                    // 1. Right of dot - vertically centered (default preference)
+                    candidates.push({
+                        left: dotRight + tooltipOffset,
+                        top: dotCenterY - tooltipRect.height / 2,
+                        priority: 1
+                    });
+
+                    // 2. Left of dot - vertically centered
+                    candidates.push({
+                        left: dotLeft - tooltipRect.width - tooltipOffset,
+                        top: dotCenterY - tooltipRect.height / 2,
+                        priority: 2
+                    });
+
+                    // 3. Above dot - horizontally centered
+                    candidates.push({
+                        left: dotCenterX - tooltipRect.width / 2,
+                        top: dotTop - tooltipRect.height - tooltipOffset,
+                        priority: 3
+                    });
+
+                    // 4. Below dot - horizontally centered (if not near timeline)
+                    if (!timelineRect || dotBottom + tooltipRect.height + tooltipOffset + 50 < timelineRect.top) {
+                        candidates.push({
+                            left: dotCenterX - tooltipRect.width / 2,
+                            top: dotBottom + tooltipOffset,
+                            priority: 4
+                        });
+                    }
+
+                    // 5. Right of dot - aligned with top
+                    candidates.push({
+                        left: dotRight + tooltipOffset,
+                        top: dotTop,
+                        priority: 5
+                    });
+
+                    // 6. Left of dot - aligned with top
+                    candidates.push({
+                        left: dotLeft - tooltipRect.width - tooltipOffset,
+                        top: dotTop,
+                        priority: 6
+                    });
+
+                    // 7. Right of dot - aligned with bottom
+                    candidates.push({
+                        left: dotRight + tooltipOffset,
+                        top: dotBottom - tooltipRect.height,
+                        priority: 7
+                    });
+
+                    // 8. Left of dot - aligned with bottom
+                    candidates.push({
+                        left: dotLeft - tooltipRect.width - tooltipOffset,
+                        top: dotBottom - tooltipRect.height,
+                        priority: 8
+                    });
+
+                    // Find the best valid candidate
+                    let bestPosition = null;
+
+                    for (const candidate of candidates) {
+                        // Check all constraints
+                        if (isInViewport(candidate.left, candidate.top) &&
+                            !overlapsAnyDot(candidate.left, candidate.top) &&
+                            !overlapsTimeline(candidate.top)) {
+                            bestPosition = candidate;
+                            break; // Use first valid candidate (highest priority)
                         }
                     }
-                    attempts++;
-                }
 
-                // Final viewport bounds check after adjustments
-                if (left < 10) left = 10;
-                if (left + tooltipRect.width > viewportWidth - 10) {
-                    left = viewportWidth - tooltipRect.width - 10;
-                }
-                if (top < 10) top = 10;
-                if (top + tooltipRect.height > viewportHeight - 10) {
-                    top = viewportHeight - tooltipRect.height - 10;
-                }
+                    // If no perfect position found, use the highest priority candidate
+                    // and clamp to viewport bounds (accepting some overlap as last resort)
+                    if (!bestPosition) {
+                        bestPosition = candidates[0]; // Default to right of dot (highest priority)
+                    }
 
-                tooltip
-                    .style("left", left + "px")
-                    .style("top", top + "px");
+                    let left = bestPosition.left;
+                    let top = bestPosition.top;
+
+                    // Final viewport clamping
+                    left = Math.max(10, Math.min(left, viewportWidth - tooltipRect.width - 10));
+                    top = Math.max(10, Math.min(top, viewportHeight - tooltipRect.height - 10));
+
+                    // Last check: if still overlapping timeline, push above it
+                    if (timelineRect && top + tooltipRect.height + 20 > timelineRect.top) {
+                        top = Math.max(10, timelineRect.top - tooltipRect.height - 30);
+                    }
+
+                    tooltip
+                        .style("left", left + "px")
+                        .style("top", top + "px");
+                }); // Close requestAnimationFrame
 
                 d3.select(this)
                     .transition()
