@@ -75,6 +75,9 @@
                     <button id="reset-filters" class="btn btn-outline-danger btn-sm">
                         <span>↻</span> Reset All
                     </button>
+                    <button id="start-story-btn" class="btn btn-danger btn-sm">
+                        <span>📖</span> Story Mode
+                    </button>
                 </div>
             </div>
         </div>
@@ -137,6 +140,52 @@
     <div id="tooltip" class="tooltip"></div>
 
     <!-- Footer with data source acknowledgement -->
+    <!-- Story Mode Panel -->
+    <div id="story-panel" class="story-panel" style="display: none;">
+        <div class="story-header">
+            <h2 id="story-title" class="story-title">Do Great Movies Make Great Money?</h2>
+            <button id="story-exit-btn" class="story-exit-btn" aria-label="Exit story mode">×</button>
+        </div>
+
+        <div class="story-content">
+            <p id="story-caption" class="story-caption">
+                Welcome to the story of commercial movie success!
+            </p>
+        </div>
+
+        <div class="story-footer">
+            <!-- Progress Indicator -->
+            <div class="story-progress" role="tablist" aria-label="Story progress">
+                <button class="story-progress-dot" role="tab" aria-label="Step 1" aria-selected="false"></button>
+                <button class="story-progress-dot" role="tab" aria-label="Step 2" aria-selected="false"></button>
+                <button class="story-progress-dot" role="tab" aria-label="Step 3" aria-selected="false"></button>
+                <button class="story-progress-dot" role="tab" aria-label="Step 4" aria-selected="false"></button>
+                <button class="story-progress-dot" role="tab" aria-label="Step 5" aria-selected="false"></button>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="story-nav">
+                <button id="story-prev-btn" class="btn btn-secondary btn-sm">
+                    ← Previous
+                </button>
+                <button id="story-next-btn" class="btn btn-danger btn-sm">
+                    Next →
+                </button>
+            </div>
+
+            <!-- Data Caveat -->
+            <p class="story-caveat">
+                <small>ⓘ Within IMDb Top-1000 sample; revenues not inflation-adjusted.</small>
+            </p>
+        </div>
+    </div>
+
+    <!-- Story Mode Backdrop -->
+    <div id="story-backdrop" class="story-backdrop" style="display: none;"></div>
+
+    <!-- ARIA Live Region for Story Mode Announcements -->
+    <div id="story-live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
     <footer class="data-source">
         <p>Data Source: <a href="https://www.kaggle.com/datasets/harshitshankhdhar/imdb-dataset-of-top-1000-movies-and-tv-shows" target="_blank">IMDB Top 1000 Movies Dataset (Kaggle)</a></p>
         <p>Visualization by Kerry Gu, Bradley Lin, and Angela Su | CSC316 Fall 2025</p>
@@ -153,6 +202,7 @@
      <script src="js/dropdown.js"></script>
     <script src="js/plotChart.js"></script>
     <script src="js/timeline.js"></script>
+    <script src="js/storyMode.js"></script>
 
 
     <!-- load data create visualization object -->

@@ -2091,4 +2091,349 @@ class plotChart {
 
         liveRegion.textContent = `${datum.Series_Title}, ${datum.Released_Year}, $${(datum.Gross / 1000000).toFixed(1)} million gross, ${datum.IMDB_Rating} out of 10 rating`;
     }
+
+    // ===================================================================
+    // PROGRAMMATIC APIs FOR STORY MODE
+    // ===================================================================
+
+    /**
+     * Capture complete application state for snapshot/restore pattern
+     * @returns {Object} State snapshot containing all filter/view settings
+     */
+    getAppSnapshot() {
+        let vis = this;
+
+        return {
+            selectedGenres: new Set(vis.selectedGenres), // Clone the Set
+            yearRange: vis.yearRange ? [...vis.yearRange] : null, // Clone array or null
+            ratingSplit: vis.ratingSplit,
+            visibleRatingBands: new Set(vis.visibleRatingBands), // Clone the Set
+            zoomTransform: {
+                k: vis.currentTransform.k,
+                x: vis.currentTransform.x,
+                y: vis.currentTransform.y
+            }
+        };
+    }
+
+    /**
+     * Restore application state from snapshot
+     * @param {Object} snapshot - Previously captured state snapshot
+     */
+    restoreAppSnapshot(snapshot) {
+        let vis = this;
+
+        if (!snapshot) return;
+
+        // Restore genres
+        vis.setSelectedGenres(Array.from(snapshot.selectedGenres));
+
+        // Restore year range (requires timeline reference)
+        vis.setYearRange(snapshot.yearRange);
+
+        // Restore rating split threshold
+        vis.setRatingSplit(snapshot.ratingSplit);
+
+        // Restore visible rating bands
+        vis.setVisibleRatingBands(Array.from(snapshot.visibleRatingBands));
+
+        // Restore zoom transform
+        if (snapshot.zoomTransform) {
+            const transform = d3.zoomIdentity
+                .translate(snapshot.zoomTransform.x, snapshot.zoomTransform.y)
+                .scale(snapshot.zoomTransform.k);
+
+            vis.svgContainer.transition().duration(500)
+                .call(vis.zoom.transform, transform);
+        }
+    }
+
+    /**
+     * Programmatically set year range filter
+     * @param {Array|null} yearRange - [minYear, maxYear] or null to clear
+     */
+    setYearRange(yearRange) {
+        let vis = this;
+
+        vis.yearRange = yearRange;
+
+        // Update timeline brush if timeline exists
+        if (vis.timeline) {
+            if (yearRange) {
+                const [minYear, maxYear] = yearRange;
+                const xScale = vis.timeline.xScale;
+                const brushSelection = [xScale(minYear), xScale(maxYear)];
+
+                vis.timeline.brushGroup.transition().duration(750)
+                    .call(vis.timeline.brush.move, brushSelection);
+            } else {
+                // Clear brush
+                vis.timeline.brushGroup.transition().duration(750)
+                    .call(vis.timeline.brush.move, null);
+            }
+        } else {
+            // If timeline doesn't exist yet, just wrangle data
+            vis.wrangleData();
+        }
+    }
+
+    /**
+     * Programmatically set selected genres
+     * @param {Array} genres - Array of genre strings to select
+     */
+    setSelectedGenres(genres) {
+        let vis = this;
+
+        // Update internal state
+        vis.selectedGenres.clear();
+        genres.forEach(genre => vis.selectedGenres.add(genre));
+
+        // Update dropdown UI if it exists
+        if (vis.DropdownMenu && vis.DropdownMenu.updateDropdownUI) {
+            vis.DropdownMenu.updateDropdownUI(genres);
+        } else {
+            // Fallback: directly update checkboxes
+            d3.selectAll("#genre-dropdown input[type='checkbox']").each(function() {
+                const checkbox = d3.select(this);
+                const isSelected = genres.includes(this.value);
+                checkbox.property("checked", isSelected);
+            });
+
+            // Update "Select All" checkbox
+            const allSelected = genres.length === vis.genres.length;
+            d3.select("#select-all").property("checked", allSelected);
+
+            // Update dropdown button text
+            if (allSelected) {
+                d3.select("#dropdown-text").text("Movie Genres");
+            } else if (genres.length === 0) {
+                d3.select("#dropdown-text").text("No Genres Selected");
+            } else if (genres.length === 1) {
+                d3.select("#dropdown-text").text(genres[0]);
+            } else {
+                d3.select("#dropdown-text").text(`${genres.length} Genres Selected`);
+            }
+        }
+
+        // Trigger data update
+        vis.wrangleData();
+    }
+
+    /**
+     * Programmatically set rating split threshold
+     * @param {number} threshold - New threshold value (0-10)
+     */
+    setRatingSplit(threshold) {
+        let vis = this;
+
+        // Clamp to rating extent
+        const clampedThreshold = Math.max(vis.ratingExtent[0], Math.min(threshold, vis.ratingExtent[1]));
+        vis.ratingSplit = clampedThreshold;
+
+        // Update color scale
+        vis.colorScale.domain([vis.ratingSplit]);
+
+        // Update slider UI if it exists
+        const slider = d3.select("#rating-threshold-slider");
+        if (!slider.empty()) {
+            slider.property("value", vis.ratingSplit);
+        }
+
+        // Update legend labels
+        if (vis.updateLegendLabels) {
+            vis.updateLegendLabels();
+        }
+
+        // Re-render chart
+        vis.wrangleData();
+    }
+
+    /**
+     * Programmatically set visible rating bands
+     * @param {Array} bands - Array of band strings ('high', 'low')
+     */
+    setVisibleRatingBands(bands) {
+        let vis = this;
+
+        // Update internal state
+        vis.visibleRatingBands.clear();
+        bands.forEach(band => vis.visibleRatingBands.add(band));
+
+        // Update legend chip UI if it exists
+        const highChip = d3.select("#legend-chip-high");
+        const lowChip = d3.select("#legend-chip-low");
+
+        if (!highChip.empty()) {
+            highChip.classed("disabled", !bands.includes('high'));
+        }
+        if (!lowChip.empty()) {
+            lowChip.classed("disabled", !bands.includes('low'));
+        }
+
+        // Re-render chart
+        vis.wrangleData();
+    }
+
+    /**
+     * Add ephemeral story annotation to a movie
+     * @param {string} movieTitle - Movie title to annotate
+     * @param {string} text - Annotation text
+     * @param {string} icon - Optional icon (emoji or symbol)
+     */
+    addAnnotation(movieTitle, text, icon = "") {
+        let vis = this;
+
+        // Find the movie in displayData
+        const movie = vis.displayData.find(d => d.Series_Title === movieTitle);
+        if (!movie) {
+            console.warn(`Movie "${movieTitle}" not found in current view for annotation`);
+            return;
+        }
+
+        // Get or create story annotation group
+        let annotationGroup = vis.svg.select("#story-annotation-group");
+        if (annotationGroup.empty()) {
+            annotationGroup = vis.svg.append("g").attr("id", "story-annotation-group");
+        }
+
+        // Calculate position
+        const x = vis.xScale(movie.Released_Year);
+        const y = vis.yScale(movie.Gross);
+
+        // Create annotation with leader line
+        const annotation = annotationGroup.append("g")
+            .attr("class", "story-annotation")
+            .attr("transform", `translate(${x}, ${y})`);
+
+        // Leader line (pointing down-left or down-right based on position)
+        const lineLength = 40;
+        const lineAngle = x > vis.width / 2 ? -45 : 45; // Point away from edges
+        const lineX = lineLength * Math.cos(lineAngle * Math.PI / 180);
+        const lineY = lineLength * Math.sin(lineAngle * Math.PI / 180);
+
+        annotation.append("line")
+            .attr("class", "annotation-line")
+            .attr("x1", 0)
+            .attr("y1", 0)
+            .attr("x2", lineX)
+            .attr("y2", lineY)
+            .style("stroke", "#e50914")
+            .style("stroke-width", "2px")
+            .style("pointer-events", "none");
+
+        // Text background box
+        const textGroup = annotation.append("g")
+            .attr("transform", `translate(${lineX}, ${lineY})`);
+
+        const displayText = icon ? `${icon} ${text}` : text;
+
+        const textElement = textGroup.append("text")
+            .attr("class", "annotation-text-temp")
+            .style("font-size", "13px")
+            .style("font-weight", "600")
+            .style("fill", "#ffffff")
+            .style("pointer-events", "none")
+            .text(displayText);
+
+        // Get text dimensions and add background
+        const bbox = textElement.node().getBBox();
+        const padding = 6;
+
+        textGroup.insert("rect", "text")
+            .attr("class", "annotation-bg")
+            .attr("x", bbox.x - padding)
+            .attr("y", bbox.y - padding)
+            .attr("width", bbox.width + padding * 2)
+            .attr("height", bbox.height + padding * 2)
+            .attr("rx", 4)
+            .style("fill", "#1a1a1a")
+            .style("stroke", "#e50914")
+            .style("stroke-width", "2px")
+            .style("pointer-events", "none");
+
+        // Add a subtle dot highlight at the movie position
+        vis.chartArea.selectAll(".dot")
+            .filter(d => d.Series_Title === movieTitle)
+            .classed("story-annotation-dot", true)
+            .style("stroke", "#e50914")
+            .style("stroke-width", "3px");
+    }
+
+    /**
+     * Apply ephemeral highlights/dims to dots based on filter function
+     * @param {Function} filterFn - Function that returns true for highlighted dots
+     */
+    highlightDots(filterFn) {
+        let vis = this;
+
+        vis.chartArea.selectAll(".dot")
+            .classed("story-highlight", d => filterFn(d))
+            .classed("story-dim", d => !filterFn(d));
+    }
+
+    /**
+     * Clear all story-specific annotations, highlights, and click handlers
+     */
+    clearStoryAnnotations() {
+        let vis = this;
+
+        // Remove annotation group
+        vis.svg.select("#story-annotation-group").remove();
+
+        // Clear story-specific classes from dots
+        vis.chartArea.selectAll(".dot")
+            .classed("story-highlight", false)
+            .classed("story-dim", false)
+            .classed("story-annotation-dot", false)
+            .classed("story-dot-clickable", false)
+            .on("click.story", null) // Remove story-specific click handlers
+            .attr("tabindex", null) // Remove tabindex for story clicks
+            .style("cursor", null); // Reset cursor
+
+        // Clear any story-specific overlays
+        vis.svg.selectAll(".story-overlay").remove();
+    }
+
+    /**
+     * Disable user interactions (for story mode)
+     * Temporarily disables zoom/pan and other direct manipulations
+     */
+    disableInteractions() {
+        let vis = this;
+
+        // Disable zoom/pan
+        if (vis.zoom) {
+            vis.svgContainer.on(".zoom", null);
+        }
+
+        // Disable keyboard navigation
+        vis.svgContainer.on("keydown", null);
+
+        // Visual indicator (optional: reduce opacity of controls)
+        d3.select("#reset-view-container").style("opacity", 0.4).style("pointer-events", "none");
+    }
+
+    /**
+     * Re-enable user interactions (after story mode)
+     */
+    enableInteractions() {
+        let vis = this;
+
+        // Re-enable zoom/pan
+        if (vis.zoom) {
+            vis.svgContainer.call(vis.zoom);
+        }
+
+        // Re-enable keyboard navigation
+        vis.svgContainer.on("keydown", function(event) {
+            vis.handleKeyboardNavigation(event);
+        });
+
+        // Restore controls opacity
+        d3.select("#reset-view-container").style("opacity", 1).style("pointer-events", "auto");
+    }
+
+    // ===================================================================
+    // END STORY MODE APIs
+    // ===================================================================
 }

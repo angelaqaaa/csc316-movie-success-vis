@@ -124,5 +124,53 @@ class DropdownMenu {
             vis.wrangleData();
         }
     }
+
+    // ===================================================================
+    // PROGRAMMATIC API FOR STORY MODE
+    // ===================================================================
+
+    /**
+     * Programmatically update dropdown UI to reflect genre selection
+     * @param {Array} genres - Array of genre strings to display as selected
+     */
+    updateDropdownUI(genres) {
+        let vis = this;
+
+        // Update checkboxes to match the provided genres array
+        d3.selectAll("#genre-dropdown input[type='checkbox']").each(function() {
+            const checkbox = d3.select(this);
+            const genreValue = this.value;
+
+            if (genreValue) { // Skip "select all" checkbox (has no value)
+                const isSelected = genres.includes(genreValue);
+                checkbox.property("checked", isSelected);
+            }
+        });
+
+        // Update "Select All" checkbox
+        const allSelected = genres.length === vis.genres.length;
+        d3.select("#select-all").property("checked", allSelected);
+
+        // Update dropdown button text
+        const dropdownText = d3.select("#dropdown-text");
+
+        if (allSelected) {
+            dropdownText.text("Movie Genres");
+        } else if (genres.length === 0) {
+            dropdownText.text("No Genres Selected");
+        } else if (genres.length === 1) {
+            dropdownText.text(genres[0]);
+        } else {
+            dropdownText.text(`${genres.length} Genres Selected`);
+        }
+
+        // Update internal state (do NOT trigger wrangleData, handled by caller)
+        vis.selectedGenres.clear();
+        genres.forEach(genre => vis.selectedGenres.add(genre));
+    }
+
+    // ===================================================================
+    // END STORY MODE API
+    // ===================================================================
 }
 

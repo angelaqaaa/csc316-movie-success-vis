@@ -58,6 +58,12 @@ function loadData() {
         // Connect timeline to chart for bidirectional highlights
         myChart.setTimeline(myTimeline);
 
+        // ===== Story Mode Initialization =====
+        // Create and initialize Story Manager after chart and timeline are ready
+        const storyManager = new StoryManager(myChart, myTimeline);
+        storyManager.init();
+        console.log("Story Mode initialized");
+
         // ===== Rating Split Threshold Control (in Legend) =====
         // Wait for legend to be created, then attach event handlers
         setTimeout(function() {

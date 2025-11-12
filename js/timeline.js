@@ -688,4 +688,141 @@ class Timeline {
             announcer.textContent = message;
         }
     }
+
+    // ===================================================================
+    // PROGRAMMATIC APIs FOR STORY MODE
+    // ===================================================================
+
+    /**
+     * Programmatically move brush with animation
+     * @param {Array|null} selection - Brush selection in data domain [minYear, maxYear] or null to clear
+     * @param {number} duration - Animation duration in ms (default 750)
+     */
+    programmaticBrush(selection, duration = 750) {
+        let vis = this;
+
+        if (selection) {
+            // Convert data domain to pixel coordinates
+            const [minYear, maxYear] = selection;
+            const brushSelection = [vis.xScale(minYear), vis.xScale(maxYear)];
+
+            // Animate brush move
+            vis.brushGroup.transition()
+                .duration(duration)
+                .call(vis.brush.move, brushSelection);
+        } else {
+            // Clear brush
+            vis.brushGroup.transition()
+                .duration(duration)
+                .call(vis.brush.move, null);
+        }
+    }
+
+    /**
+     * Disable manual brush interactions (for story mode)
+     */
+    disableInteractions() {
+        let vis = this;
+
+        // Detach brush event handlers
+        vis.brushGroup.on(".brush", null);
+
+        // Detach hover area event handlers
+        if (vis.hoverArea) {
+            vis.hoverArea
+                .on("mousemove", null)
+                .on("mouseleave", null)
+                .on("click", null);
+        }
+
+        // Visual indicator: reduce opacity
+        vis.svg.style("opacity", 0.6);
+    }
+
+    /**
+     * Re-enable manual brush interactions (after story mode)
+     */
+    enableInteractions() {
+        let vis = this;
+
+        // Re-attach brush
+        vis.brushGroup.call(vis.brush);
+
+        // Restore hover interactions if hoverArea exists
+        if (vis.hoverArea) {
+            vis.setupHoverInteractions();
+        }
+
+        // Restore full opacity
+        vis.svg.style("opacity", 1);
+    }
+
+    /**
+     * Helper method to re-establish hover interactions after story mode
+     * (Extracted from initVis for reusability)
+     */
+    setupHoverInteractions() {
+        let vis = this;
+
+        if (!vis.hoverArea) return;
+
+        // Throttled mousemove handler
+        vis.hoverArea
+            .on("mousemove", function(event) {
+                if (vis.animationFrame) return;
+
+                vis.animationFrame = requestAnimationFrame(() => {
+                    if (vis.isLocked) {
+                        vis.animationFrame = null;
+                        return;
+                    }
+
+                    const [xPos] = d3.pointer(event);
+                    const hoveredYear = Math.round(vis.xScale.invert(xPos));
+
+                    if (vis.hoveredYear !== hoveredYear) {
+                        vis.hoveredYear = hoveredYear;
+
+                        // Position hairline
+                        vis.hairlineGroup
+                            .attr("transform", `translate(${vis.xScale(hoveredYear)}, 0)`)
+                            .style("opacity", 1);
+
+                        vis.hairlineLabel.text(hoveredYear);
+
+                        const labelBBox = vis.hairlineLabel.node().getBBox();
+                        vis.hairlineLabelBg
+                            .attr("x", -labelBBox.width / 2 - 4)
+                            .attr("width", labelBBox.width + 8);
+
+                        // Notify main chart to highlight scatter dots
+                        if (vis.onYearHover) {
+                            vis.onYearHover(hoveredYear);
+                        }
+                    }
+
+                    vis.animationFrame = null;
+                });
+            })
+            .on("mouseleave", function() {
+                if (vis.isLocked) return;
+
+                vis.hoveredYear = null;
+                vis.hairlineGroup.style("opacity", 0);
+
+                // Clear highlights on chart
+                if (vis.onYearHover) {
+                    vis.onYearHover(null);
+                }
+            })
+            .on("click", function(event) {
+                if (vis.hoveredYear !== null && !vis.isLocked) {
+                    vis.lockYear(vis.hoveredYear);
+                }
+            });
+    }
+
+    // ===================================================================
+    // END STORY MODE APIs
+    // ===================================================================
 }
