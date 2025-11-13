@@ -15,6 +15,9 @@ class plotChart {
         this.isContainerFocused = false; // Track if container has focus
         this.isHoveringDot = false; // Track if currently hovering over any dot
 
+        // Track story mode state
+        this.isStoryModeActive = false;
+
         this.initVis();
     }
 
@@ -1283,6 +1286,9 @@ class plotChart {
 
         mergedCircles
             .on("mouseover", function (event, d) {
+                // Skip if story mode is active
+                if (vis.isStoryModeActive) return;
+
                 // Mark that we're currently hovering over a dot
                 vis.isHoveringDot = true;
 
@@ -1530,6 +1536,9 @@ class plotChart {
                     .style("stroke-width", "2px");
             })
             .on("mouseout", function (event, d) {
+                // Skip if story mode is active
+                if (vis.isStoryModeActive) return;
+
                 // Mark that we're no longer hovering over this specific dot
                 vis.isHoveringDot = false;
 
@@ -2090,5 +2099,208 @@ class plotChart {
         }
 
         liveRegion.textContent = `${datum.Series_Title}, ${datum.Released_Year}, $${(datum.Gross / 1000000).toFixed(1)} million gross, ${datum.IMDB_Rating} out of 10 rating`;
+    }
+
+    // ===== Story Mode Programmatic Control Methods =====
+
+    /**
+     * Programmatically set selected genres (for story mode)
+     * @param {Array|string} genres - Array of genre names or 'All' for all genres
+     */
+    programmaticSetGenres(genres) {
+        let vis = this;
+
+        vis.selectedGenres.clear();
+
+        if (genres === 'All' || (Array.isArray(genres) && genres.length === 0)) {
+            // Select all genres
+            vis.genres.forEach(genre => vis.selectedGenres.add(genre));
+        } else if (Array.isArray(genres)) {
+            // Select specific genres
+            genres.forEach(genre => {
+                if (vis.genres.includes(genre)) {
+                    vis.selectedGenres.add(genre);
+                }
+            });
+        }
+
+        // Update dropdown UI
+        d3.select("#select-all").property("checked", vis.selectedGenres.size === vis.genres.length);
+        d3.selectAll("#genre-dropdown input[type='checkbox']").property("checked", function() {
+            const genreValue = this.value;
+            return vis.selectedGenres.has(genreValue);
+        });
+
+        // Update dropdown text
+        const dropdownText = d3.select("#dropdown-text");
+        if (vis.selectedGenres.size === vis.genres.length) {
+            dropdownText.text("All Movie Genres");
+        } else if (vis.selectedGenres.size === 1) {
+            dropdownText.text(Array.from(vis.selectedGenres)[0]);
+        } else {
+            dropdownText.text(`${vis.selectedGenres.size} Genres Selected`);
+        }
+
+        // Update visualization
+        vis.wrangleData();
+    }
+
+    /**
+     * Add story annotation to a specific movie dot
+     * @param {string} movieTitle - Title of the movie to annotate
+     */
+    addStoryAnnotation(movieTitle) {
+        let vis = this;
+
+        // Find the movie in displayData
+        const movie = vis.displayData.find(d => d.Series_Title === movieTitle);
+        if (!movie) {
+            console.warn(`Movie "${movieTitle}" not found in current view`);
+            return;
+        }
+
+        // Add glow effect to the dot
+        vis.chartArea.selectAll(".dot")
+            .filter(d => d.Series_Title === movieTitle)
+            .classed("story-annotation-dot", true)
+            .style("stroke", "#e50914")
+            .style("stroke-width", "3px")
+            .style("filter", "drop-shadow(0 0 8px rgba(229, 9, 20, 0.8))");
+    }
+
+    /**
+     * Clear all story annotations
+     */
+    clearStoryAnnotations() {
+        let vis = this;
+
+        // Remove glow effects from all dots
+        vis.chartArea.selectAll(".dot")
+            .classed("story-annotation-dot", false)
+            .style("stroke", null)
+            .style("stroke-width", null)
+            .style("filter", null);
+    }
+
+    /**
+     * Make specific dots clickable for story mode interaction
+     * @param {Array} movieTitles - Array of movie titles to make clickable
+     * @param {Function} callback - Function to call when a dot is clicked
+     */
+    makeDotsClickableForStory(movieTitles, callback) {
+        let vis = this;
+
+        vis.chartArea.selectAll(".dot")
+            .filter(d => movieTitles.includes(d.Series_Title))
+            .classed("story-clickable-dot", true)
+            .style("cursor", "pointer")
+            .style("animation", "pulse 1.5s ease-in-out infinite")
+            .on("click.story", function(event, d) {
+                event.stopPropagation();
+                callback(d);
+            })
+            .on("keydown.story", function(event, d) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    callback(d);
+                }
+            })
+            .attr("tabindex", "0")
+            .attr("role", "button")
+            .attr("aria-label", d => `Click to learn more about ${d.Series_Title}`);
+    }
+
+    /**
+     * Clear clickable dot handlers for story mode
+     */
+    clearClickableDotsForStory() {
+        let vis = this;
+
+        vis.chartArea.selectAll(".dot")
+            .classed("story-clickable-dot", false)
+            .style("cursor", null)
+            .style("animation", null)
+            .on("click.story", null)
+            .on("keydown.story", null)
+            .attr("tabindex", null)
+            .attr("role", null)
+            .attr("aria-label", null);
+    }
+
+    /**
+     * Disable zoom and pan interactions (for story mode)
+     */
+    disableZoomPan() {
+        let vis = this;
+
+        // Remove zoom behavior
+        vis.svgContainer.on(".zoom", null);
+    }
+
+    /**
+     * Re-enable zoom and pan interactions
+     */
+    enableZoomPan() {
+        let vis = this;
+
+        // Re-attach zoom behavior
+        vis.svgContainer.call(vis.zoom);
+    }
+
+    /**
+     * Get current state snapshot for restoration
+     * @returns {Object} Current state object
+     */
+    getStateSnapshot() {
+        let vis = this;
+
+        return {
+            selectedGenres: Array.from(vis.selectedGenres),
+            yearRange: vis.yearRange ? [...vis.yearRange] : null,
+            zoomTransform: vis.currentTransform ? {...vis.currentTransform} : {k: 1, x: 0, y: 0},
+            ratingThreshold: vis.currentRatingSplit,
+            visibleBands: {
+                high: vis.legend.selectAll(".legend-item").filter(function() {
+                    return d3.select(this).attr("data-band") === "high";
+                }).classed("disabled", false),
+                low: vis.legend.selectAll(".legend-item").filter(function() {
+                    return d3.select(this).attr("data-band") === "low";
+                }).classed("disabled", false)
+            }
+        };
+    }
+
+    /**
+     * Restore state from snapshot
+     * @param {Object} snapshot - State snapshot to restore
+     */
+    restoreStateSnapshot(snapshot) {
+        let vis = this;
+
+        // Restore genre selection
+        if (snapshot.selectedGenres) {
+            vis.programmaticSetGenres(snapshot.selectedGenres);
+        }
+
+        // Restore year range
+        if (snapshot.yearRange) {
+            vis.updateYearRange(snapshot.yearRange);
+        } else {
+            vis.updateYearRange(null);
+        }
+
+        // Restore zoom transform
+        if (snapshot.zoomTransform) {
+            const transform = d3.zoomIdentity
+                .translate(snapshot.zoomTransform.x, snapshot.zoomTransform.y)
+                .scale(snapshot.zoomTransform.k);
+            vis.svgContainer.call(vis.zoom.transform, transform);
+        }
+
+        // Restore rating threshold
+        if (snapshot.ratingThreshold !== undefined) {
+            vis.updateRatingSplit(snapshot.ratingThreshold);
+            d3.select("#rating-threshold-slider").property("value", snapshot.ratingThreshold);
+        }
     }
 }

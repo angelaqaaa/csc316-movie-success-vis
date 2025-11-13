@@ -75,9 +75,43 @@
                     <button id="reset-filters" class="btn btn-outline-danger btn-sm">
                         <span>↻</span> Reset All
                     </button>
+                    <button id="start-story-btn" class="btn btn-outline-danger btn-sm">
+                        📖 Tell Me a Story
+                    </button>
                 </div>
             </div>
         </div>
+
+            <!-- Story Mode Panel (hidden by default) -->
+            <div id="story-panel" class="story-panel" style="display: none;">
+                <div class="story-panel-content">
+                    <h3 class="story-headline">📖 Do Great Movies Make Great Money?</h3>
+
+                    <div id="story-caption" class="story-caption" aria-live="polite" aria-atomic="true">
+                        Welcome to the story...
+                    </div>
+
+                    <div class="story-navigation">
+                        <button id="story-prev-btn" class="btn btn-secondary btn-sm" disabled>
+                            ← Back
+                        </button>
+                        <button id="story-next-btn" class="btn btn-danger btn-sm">
+                            Next →
+                        </button>
+                    </div>
+
+                    <button id="end-story-btn" class="btn btn-outline-light btn-sm story-exit-btn">
+                        ✕ End Story & Explore
+                    </button>
+
+                    <p class="story-caveat">
+                        ⓘ Within IMDb Top-1000 sample; revenues not inflation-adjusted.
+                    </p>
+                </div>
+            </div>
+
+            <!-- ARIA live region for story announcements -->
+            <div id="story-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
                 <!-- Loading Indicator -->
                 <div id="loading-indicator" class="loading-indicator">
@@ -153,7 +187,7 @@
      <script src="js/dropdown.js"></script>
     <script src="js/plotChart.js"></script>
     <script src="js/timeline.js"></script>
-
+    <script src="js/storyMode.js"></script>
 
     <!-- load data create visualization object -->
     <script src="js/main.js"></script>

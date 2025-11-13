@@ -1037,3 +1037,194 @@
     white-space: nowrap;
     border-width: 0;
   }
+
+  /* ===== Story Mode Styles ===== */
+
+  /* Story Panel - Sidebar */
+  .story-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 380px;
+    height: 100vh;
+    background: linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%);
+    border-left: 2px solid #e50914;
+    padding: 30px 25px;
+    z-index: 1001;
+    overflow-y: auto;
+    box-shadow: -4px 0 20px rgba(229, 9, 20, 0.3);
+    transform: translateX(100%);
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .story-panel[style*="display: block"] {
+    transform: translateX(0);
+  }
+
+  .story-panel-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: 100%;
+  }
+
+  .story-headline {
+    font-size: 22px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .story-caption {
+    flex: 1;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #ccc;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid #e50914;
+    border-radius: 4px;
+  }
+
+  .story-caption strong {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .story-caption em {
+    color: #e50914;
+    font-style: italic;
+  }
+
+  .story-badge {
+    display: inline-block;
+    background: #e50914;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  .story-navigation {
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+  }
+
+  .story-navigation button {
+    flex: 1;
+  }
+
+  .story-exit-btn {
+    width: 100%;
+    margin-top: auto;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  }
+
+  .story-exit-btn:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: #fff !important;
+  }
+
+  .story-caveat {
+    font-size: 12px;
+    color: #888;
+    margin: 0;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Story Overlay - Dims other UI elements */
+  .story-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 999;
+    animation: fadeIn 0.3s ease-in;
+    pointer-events: none;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* Story Mode Active - No layout changes, panel just overlays */
+  body.story-mode-active {
+    /* Story panel will overlay on right side */
+  }
+
+  /* Hide tooltips during story mode */
+  #tooltip.story-mode-hidden {
+    display: none !important;
+    opacity: 0 !important;
+  }
+
+  /* Story Annotations - Glowing dots */
+  .dot.story-annotation-dot {
+    filter: drop-shadow(0 0 8px rgba(229, 9, 20, 0.8));
+    stroke: #e50914;
+    stroke-width: 3px;
+  }
+
+  /* Clickable Story Dots - Pulsing animation */
+  .dot.story-clickable-dot {
+    cursor: pointer !important;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+      filter: drop-shadow(0 0 8px rgba(229, 9, 20, 0.8));
+    }
+    50% {
+      opacity: 0.7;
+      filter: drop-shadow(0 0 12px rgba(229, 9, 20, 1));
+    }
+  }
+
+  .dot.story-clickable-dot:hover {
+    filter: drop-shadow(0 0 12px rgba(229, 9, 20, 1)) !important;
+  }
+
+  .dot.story-clickable-dot:focus {
+    outline: 2px solid #e50914;
+    outline-offset: 4px;
+  }
+
+  /* Responsive Story Panel */
+  @media (max-width: 1200px) {
+    .story-panel {
+      width: 300px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .story-panel {
+      width: 100%;
+      height: 40vh;
+      top: auto;
+      bottom: 0;
+      right: 0;
+      left: 0;
+      border-left: none;
+      border-top: 2px solid #e50914;
+      transform: translateY(100%);
+    }
+
+    .story-panel[style*="display: block"] {
+      transform: translateY(0);
+    }
+
+    .story-overlay {
+      background: rgba(0, 0, 0, 0.2);
+    }
+  }

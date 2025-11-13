@@ -23,6 +23,9 @@ class Timeline {
         this.graceTimer = null; // Timer for 700ms grace period
         this.isLocked = false; // Lock state flag
 
+        // Track story mode state (prevents brush from being re-applied)
+        this.isStoryModeActive = false;
+
         this.initVis();
     }
 
@@ -371,8 +374,11 @@ class Timeline {
         });
 
         // Initialize brush component (AFTER hover area so brush is on top and clickable)
+        // Store the original brush Y offset (for shortened brush appearance)
+        vis.brushYOffset = 10;
+
         vis.brush = d3.brushX()
-            .extent([[0, 10], [vis.width, vis.height]])
+            .extent([[0, vis.brushYOffset], [vis.width, vis.height]])
             .on("brush end", function (event) {
                 if (event.selection) {
                     // Convert pixel coordinates to year values
@@ -424,8 +430,8 @@ class Timeline {
             vis.xScale.range([0, vis.width]);
             vis.yScale.range([vis.height, 0]);
 
-            // Update brush extent
-            vis.brush.extent([[0, 0], [vis.width, vis.height]]);
+            // Update brush extent (preserve original Y offset for shortened brush)
+            vis.brush.extent([[0, vis.brushYOffset], [vis.width, vis.height]]);
 
             // Update hairline height
             if (vis.hairline) {
@@ -504,8 +510,10 @@ class Timeline {
             .attr("class", "trend-line")
             .attr("d", line);
 
-        // Apply brush
-        vis.brushGroup.call(vis.brush);
+        // Apply brush (skip if story mode is active to prevent re-enabling)
+        if (!vis.isStoryModeActive) {
+            vis.brushGroup.call(vis.brush);
+        }
     }
 
     // Method to highlight a specific year (bidirectional highlight: scatter → timeline)
@@ -687,5 +695,70 @@ class Timeline {
         if (announcer) {
             announcer.textContent = message;
         }
+    }
+
+    // ===== Story Mode Programmatic Control Methods =====
+
+    /**
+     * Programmatically set brush selection (for story mode)
+     * @param {Array|null} yearRange - [minYear, maxYear] or null to clear
+     * @param {number} duration - Animation duration in milliseconds (default: 0)
+     */
+    programmaticBrush(yearRange, duration = 0) {
+        let vis = this;
+
+        if (!yearRange) {
+            // Clear brush
+            vis.brushGroup.transition().duration(duration)
+                .call(vis.brush.move, null);
+            return;
+        }
+
+        // Convert years to pixel coordinates
+        const [minYear, maxYear] = yearRange;
+        const selection = [vis.xScale(minYear), vis.xScale(maxYear)];
+
+        // Animate brush to new selection
+        vis.brushGroup.transition().duration(duration)
+            .call(vis.brush.move, selection);
+    }
+
+    /**
+     * Disable brush interactions (for story mode)
+     */
+    disableBrush() {
+        let vis = this;
+
+        // Remove brush event handlers
+        vis.brushGroup.on(".brush", null);
+
+        // Disable pointer events to prevent brush dragging
+        vis.brushGroup.style("pointer-events", "none");
+    }
+
+    /**
+     * Re-enable brush interactions
+     */
+    enableBrush() {
+        let vis = this;
+
+        // Re-enable pointer events
+        vis.brushGroup.style("pointer-events", null);
+
+        // Re-attach brush
+        vis.brushGroup.call(vis.brush);
+    }
+
+    /**
+     * Get current brush state for snapshot
+     * @returns {Array|null} Current brush selection as [minYear, maxYear] or null
+     */
+    getBrushState() {
+        let vis = this;
+
+        const selection = d3.brushSelection(vis.brushGroup.node());
+        if (!selection) return null;
+
+        return selection.map(vis.xScale.invert);
     }
 }

@@ -120,6 +120,13 @@ function loadData() {
             setTimeout(() => this.blur(), 100);
         });
 
+        // ===== Story Mode Initialization =====
+        // Initialize story mode after chart and timeline are ready
+        const storyManager = new StoryManager(myChart, myTimeline);
+        storyManager.init();
+
+        console.log("Story Mode initialized");
+
     }).catch(error => {
         console.error("Error loading data:", error);
     })
