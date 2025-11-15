@@ -13,7 +13,7 @@ class StoryManager {
         // Define the 5-step story arc
         this.storySteps = [
             { // Step 0: The Hook
-                caption: "Welcome! Let's explore the relationship between critical acclaim and commercial success in cinema. We'll start with a full view of IMDb's top-rated movies from 1921-2019.",
+                caption: "Welcome! This chart shows 1000 top-rated movies by their release year (left-to-right) and box office gross (bottom-to-top). Let's see how this relationship has changed.",
                 yearRange: null, // Show all years
                 genres: 'All',
                 annotations: [],
@@ -21,7 +21,7 @@ class StoryManager {
                 requireClickToAdvance: false
             },
             { // Step 1: Golden Age (1930-1975)
-                caption: `During the "Golden Age" (1930-1975), many celebrated films were also strong earners for their time. Films like <strong>The Godfather</strong> exemplify this alignment. <span class="story-badge">Trend: Aligned</span>`,
+                caption: `First, let's look at the 'Golden Age' (1930-1975). In this era, many celebrated films were also strong earners for their time. <span class="story-badge">Evidence: Trend Aligned</span>`,
                 yearRange: [1930, 1975],
                 genres: 'All',
                 annotations: ["The Godfather"],
@@ -29,15 +29,15 @@ class StoryManager {
                 requireClickToAdvance: false
             },
             { // Step 2: The Blockbuster Era (1975-1985)
-                caption: `In the 1970s, the "Blockbuster" was born. Films like <strong>Star Wars</strong> and <strong>Jaws</strong> proved that Action and Sci-Fi could dominate both critically and commercially.<br><br><strong>👉 Click the annotated dot for Star Wars to continue.</strong>`,
+                caption: `The 1970s created the 'Blockbuster.' Suddenly, 'Action' and 'Sci-Fi' films could dominate. <strong>Click the pulsing dot for <em>Star Wars</em> to see what happened.</strong>`,
                 yearRange: [1975, 1985],
-                genres: ['Action', 'Adventure', 'Sci-Fi'],
+                genres: ['Action', 'Sci-Fi'],
                 annotations: ["Star Wars", "Jaws"],
                 clickableMovies: ["Star Wars"],
                 requireClickToAdvance: true
             },
             { // Step 3: The Great Divergence (1990-2019)
-                caption: `<span class="story-badge story-badge-topright">Correlation: Weak</span>In the modern era (1990-2019), two distinct success patterns emerged:<br>• <strong>Critic-Proof Hits</strong> like <em>Star Wars: Episode VII</em> (high revenue, lower ratings)<br>• <strong>Acclaimed Gems</strong> like <em>The Shawshank Redemption</em> (high ratings, moderate revenue)<br><br><strong>👉 Click either highlighted film to continue.</strong>`,
+                caption: `In the modern era (1990-2019), success split. We now have 'Critic-Proof Hits' (high gross, lower ratings) and 'Acclaimed Gems' (high ratings, low gross).<br><br><strong>Click either highlighted film to continue.</strong> <span class="story-badge">Evidence: Correlation Weak</span>`,
                 yearRange: [1990, 2019],
                 genres: 'All',
                 annotations: ["The Shawshank Redemption", "Star Wars: Episode VII - The Force Awakens"],
@@ -45,7 +45,7 @@ class StoryManager {
                 requireClickToAdvance: true
             },
             { // Step 4: Your Turn
-                caption: `Now explore on your own!`,
+                caption: `You've seen the story of the critic-audience split. The dashboard is now unlocked for free exploration. When you're ready, end the story to begin.`,
                 yearRange: null, // Will be handled by state restore
                 genres: null, // Will be handled by state restore
                 annotations: [],
@@ -192,6 +192,19 @@ class StoryManager {
         // Reset story mode flags (re-enable interactive handlers)
         this.plotChart.isStoryModeActive = false;
         this.timeline.isStoryModeActive = false;
+
+        // Clear any stuck transition flags
+        this.plotChart.useTransition = false;
+        this.plotChart.transitionDuration = 0;
+        this.timeline.programmaticDuration = 0;
+
+        // Reset axes to use correct scales (fix for stuck x-axis after story mode)
+        // This ensures the axis generators are not using stale transformed scales
+        this.plotChart.xAxis.scale(this.plotChart.xScale);
+        this.plotChart.yAxis.scale(this.plotChart.yScale);
+
+        // Force a chart update to ensure axes are responsive
+        this.plotChart.wrangleData();
 
         // Restore header elements (Replacement Model)
         d3.select('.header-section').style('display', null);

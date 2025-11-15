@@ -724,15 +724,15 @@ svg:focus-visible,
   .featured-movies {
     background-color: #1a1a1a;
     border-radius: 8px;
-    padding: 20px;
-    margin: 20px 10px;
+    padding: 16px;
+    margin: 20px 15px 15px;
   }
 
   .featured-title {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     color: #e50914;
-    margin: 0 0 15px 0;
+    margin: 0 0 12px 0;
     text-align: center;
   }
 
@@ -746,7 +746,7 @@ svg:focus-visible,
     background-color: #111;
     border: 1px solid #333;
     border-radius: 6px;
-    padding: 15px;
+    padding: 12px;
     text-align: center;
     transition: all 0.3s ease;
   }
@@ -757,41 +757,49 @@ svg:focus-visible,
     box-shadow: 0 4px 12px rgba(229, 9, 20, 0.2);
   }
 
+  .featured-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
   .featured-icon {
-    font-size: 32px;
-    margin-bottom: 8px;
+    font-size: 20px;
+    line-height: 1;
   }
 
   .featured-label {
-    font-size: 12px;
+    font-size: 11px;
     color: #888;
     font-weight: 500;
-    margin-bottom: 4px;
+    margin: 0;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
   }
 
   .featured-sublabel {
-    font-size: 10px;
+    font-size: 8px;
     color: #666;
     font-weight: 400;
-    margin-bottom: 8px;
+    margin-bottom: 2px;
     font-style: italic;
   }
 
   .featured-movie-title {
-    font-size: 14px;
+    font-size: 13px;
     color: #fff;
     font-weight: 600;
-    margin-bottom: 5px;
-    min-height: 36px;
+    margin-bottom: 4px;
+    min-height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
   .featured-value {
-    font-size: 13px;
+    font-size: 11px;
     color: #e50914;
     font-weight: 500;
   }

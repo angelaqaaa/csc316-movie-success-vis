@@ -383,6 +383,8 @@ class Timeline {
                 if (event.selection) {
                     // Convert pixel coordinates to year values
                     let yearRange = event.selection.map(vis.xScale.invert);
+                    // Round to nearest integer years for cleaner alignment
+                    yearRange = [Math.floor(yearRange[0]), Math.ceil(yearRange[1])];
                     // Call the callback function with selected range
                     if (vis.onBrush) {
                         vis.onBrush(yearRange);
@@ -707,10 +709,16 @@ class Timeline {
     programmaticBrush(yearRange, duration = 0) {
         let vis = this;
 
+        // Store the duration for the callback to use
+        vis.programmaticDuration = duration;
+
         if (!yearRange) {
             // Clear brush
             vis.brushGroup.transition().duration(duration)
                 .call(vis.brush.move, null);
+            setTimeout(() => {
+                vis.programmaticDuration = 0;
+            }, duration + 50);
             return;
         }
 
@@ -721,6 +729,11 @@ class Timeline {
         // Animate brush to new selection
         vis.brushGroup.transition().duration(duration)
             .call(vis.brush.move, selection);
+
+        // Clear the duration flag after transition ends
+        setTimeout(() => {
+            vis.programmaticDuration = 0;
+        }, duration + 50);
     }
 
     /**

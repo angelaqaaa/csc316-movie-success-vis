@@ -106,7 +106,9 @@ function loadData() {
         myTimeline = new Timeline("slider-chart", data,
             // onBrush callback: when brush changes, update the main chart
             function (yearRange) {
-                myChart.updateYearRange(yearRange);
+                // Pass duration if it's a programmatic brush from story mode
+                const duration = myTimeline.programmaticDuration || 0;
+                myChart.updateYearRange(yearRange, duration);
             },
             // onYearHover callback: when year is hovered on timeline, highlight scatter points
             function (year) {

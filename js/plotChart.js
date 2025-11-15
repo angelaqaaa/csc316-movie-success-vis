@@ -690,9 +690,18 @@ class plotChart {
 
 
     // Method to handle year range updates from Timeline
-    updateYearRange(yearRange) {
+    updateYearRange(yearRange, duration = 0) {
         let vis = this;
         vis.yearRange = yearRange;
+        // Only set transition flags when duration is explicitly provided
+        if (duration > 0) {
+            vis.useTransition = true;
+            vis.transitionDuration = duration;
+        } else {
+            // Explicitly clear transition flags for normal brush operations
+            vis.useTransition = false;
+            vis.transitionDuration = 0;
+        }
         vis.wrangleData();
     }
 
@@ -852,6 +861,10 @@ class plotChart {
         let vis = this;
 
         vis.currentTransform = d3.zoomIdentity;
+
+        // Reset axes to use original scales (not transformed scales)
+        vis.xAxis.scale(vis.xScale);
+        vis.yAxis.scale(vis.yScale);
 
         // Apply the reset with a smooth transition
         vis.svgContainer.transition()
@@ -1357,8 +1370,23 @@ class plotChart {
             vis.xAxisGroup.call(vis.xAxis.scale(newXScale));
             vis.yAxisGroup.call(vis.yAxis.scale(newYScale));
         } else {
-            vis.xAxisGroup.call(vis.xAxis);
-            vis.yAxisGroup.call(vis.yAxis);
+            // Apply transition if flagged (for story mode)
+            if (vis.useTransition) {
+                vis.xAxisGroup.transition()
+                    .duration(vis.transitionDuration || 750)
+                    .call(vis.xAxis.scale(vis.xScale));  // Explicitly set scale
+                vis.yAxisGroup.transition()
+                    .duration(vis.transitionDuration || 750)
+                    .call(vis.yAxis.scale(vis.yScale));  // Explicitly set scale
+                // Clear transition flags after use
+                vis.useTransition = false;
+                vis.transitionDuration = 0;
+            } else {
+                // Normal update without transition
+                // IMPORTANT: Always explicitly set the scale to ensure it's not using a stale transformed scale
+                vis.xAxisGroup.call(vis.xAxis.scale(vis.xScale));
+                vis.yAxisGroup.call(vis.yAxis.scale(vis.yScale));
+            }
         }
 
 
