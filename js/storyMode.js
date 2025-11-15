@@ -235,13 +235,11 @@ class StoryManager {
             .style('cursor', null)
             .style('opacity', null)
             .on('click', function() {
-                this.blur();
                 plotChart.resetLegend();
             })
             .on('keydown', function(event) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    this.blur();
                     plotChart.resetLegend();
                 }
             })
@@ -252,13 +250,11 @@ class StoryManager {
             .style('cursor', null)
             .style('opacity', null)
             .on('click', function(event, d) {
-                this.blur();
                 plotChart.toggleRatingBand(d.id);
             })
             .on('keydown', function(event, d) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    this.blur();
                     plotChart.toggleRatingBand(d.id);
                 }
             });

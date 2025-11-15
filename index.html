@@ -21,11 +21,11 @@
             <h2 class="welcome-headline">Do Great Movies Make Great Money?</h2>
             <p class="welcome-caption">Explore the link between audience ratings, critical acclaim (Metascore), and box office success in the IMDb Top 1000.</p>
             <div class="welcome-buttons">
-                <button id="explore-own-btn" class="btn btn-outline-light btn-lg">
-                    🔍 Explore on Your Own
+                <button id="explore-own-btn" class="btn btn-outline-light btn-lg" aria-label="Explore the visualization on your own">
+                    <span aria-hidden="true">🔍</span> Explore on Your Own
                 </button>
-                <button id="start-guided-story-btn" class="btn btn-danger btn-lg">
-                    📖 Start Guided Story
+                <button id="start-guided-story-btn" class="btn btn-danger btn-lg" aria-label="Start guided story mode">
+                    <span aria-hidden="true">📖</span> Start Guided Story
                 </button>
             </div>
         </div>
@@ -37,19 +37,19 @@
             <!-- Instructions - Top Left Corner -->
             <div class="instructions-corner">
                 <details>
-                    <summary><strong>💡 How to Explore</strong></summary>
+                    <summary><strong><span aria-hidden="true">💡</span> How to Explore</strong></summary>
                     <div class="tips-content">
-                        <span class="tip-item">🎯 <strong>Click dots</strong> to compare with other dots</span>
-                        <span class="tip-item">🖱️ <strong>Click background</strong> to dismiss comparisons</span>
-                        <span class="tip-item">📅 <strong>Drag timeline</strong> to filter year range</span>
-                        <span class="tip-item">🔄 <strong>Hover timeline/dots</strong> for cross-highlights</span>
-                        <span class="tip-item">🔒 <strong>Double-click timeline</strong> to lock highlighted year</span>
-                        <span class="tip-item">↻ <strong>Timeline button</strong> resets timeline filter</span>
-                        <span class="tip-item">🎬 <strong>Genre dropdown</strong> filters by movie type</span>
-                        <span class="tip-item">📊 <strong>Click legend bands</strong> to toggle ratings</span>
-                        <span class="tip-item">📏 <strong>Drag legend slider</strong> to adjust split</span>
-                        <span class="tip-item">🔍 <strong>Cmd+scroll</strong> to zoom, drag to pan</span>
-                        <span class="tip-item">📖 <strong>Story button</strong> for guided narrative</span>
+                        <span class="tip-item"><span aria-hidden="true">🎯</span> <strong>Click dots</strong> to compare with other dots</span>
+                        <span class="tip-item"><span aria-hidden="true">🖱️</span> <strong>Click background</strong> to dismiss comparisons</span>
+                        <span class="tip-item"><span aria-hidden="true">📅</span> <strong>Drag timeline</strong> to filter year range</span>
+                        <span class="tip-item"><span aria-hidden="true">🔄</span> <strong>Hover timeline/dots</strong> for cross-highlights</span>
+                        <span class="tip-item"><span aria-hidden="true">🔒</span> <strong>Double-click timeline</strong> to lock highlighted year</span>
+                        <span class="tip-item"><span aria-hidden="true">↻</span> <strong>Timeline button</strong> resets timeline filter</span>
+                        <span class="tip-item"><span aria-hidden="true">🎬</span> <strong>Genre dropdown</strong> filters by movie type</span>
+                        <span class="tip-item"><span aria-hidden="true">📊</span> <strong>Click legend bands</strong> to toggle ratings</span>
+                        <span class="tip-item"><span aria-hidden="true">📏</span> <strong>Drag legend slider</strong> to adjust split</span>
+                        <span class="tip-item"><span aria-hidden="true">🔍</span> <strong>Cmd+scroll</strong> to zoom, drag to pan</span>
+                        <span class="tip-item"><span aria-hidden="true">📖</span> <strong>Story button</strong> for guided narrative</span>
                     </div>
                 </details>
             </div>
@@ -104,11 +104,11 @@
                 </div>
 
                 <div class="filter-actions">
-                    <button id="reset-filters" class="btn btn-outline-danger btn-sm">
-                        <span>↻</span> Reset All
+                    <button id="reset-filters" class="btn btn-outline-danger btn-sm" aria-label="Reset all filters to default settings">
+                        <span aria-hidden="true">↻</span> Reset All
                     </button>
-                    <button id="start-story-btn" class="btn btn-outline-danger btn-sm">
-                        📖 Tell Me a Story
+                    <button id="start-story-btn" class="btn btn-outline-danger btn-sm" aria-label="Start guided story mode">
+                        <span aria-hidden="true">📖</span> Tell Me a Story
                     </button>
                 </div>
             </div>
@@ -118,7 +118,7 @@
             <div id="story-panel" class="story-panel" style="display: none;">
                 <div class="story-panel-content">
                     <!-- Movie Mascot Character -->
-                    <div class="story-mascot">🎬</div>
+                    <div class="story-mascot" aria-hidden="true">🎬</div>
 
                     <!-- Story Content Wrapper -->
                     <div class="story-content-wrapper">
@@ -143,7 +143,7 @@
                                 <span class="story-progress-dot" data-step="4"></span>
                             </div>
                             <!-- Data Caveat -->
-                            <div class="story-caveat">ⓘ Within IMDb Top-830 sample; revenues not inflation-adjusted.</div>
+                            <div class="story-caveat"><span aria-hidden="true">ⓘ</span> Within IMDb Top-830 sample; revenues not inflation-adjusted.</div>
                         </div>
                     </div>
 
@@ -151,16 +151,16 @@
                     <div class="story-nav-wrapper">
                         <!-- Navigation Buttons -->
                         <div class="story-navigation">
-                            <button id="story-prev-btn" class="btn btn-secondary btn-sm" disabled>
+                            <button id="story-prev-btn" class="btn btn-secondary btn-sm" disabled aria-label="Go to previous story step">
                                 ← Back
                             </button>
-                            <button id="story-next-btn" class="btn btn-danger btn-sm">
+                            <button id="story-next-btn" class="btn btn-danger btn-sm" aria-label="Go to next story step">
                                 Next →
                             </button>
                         </div>
                         <!-- End Story Button (below nav) -->
-                        <button id="end-story-btn" class="btn btn-outline-light btn-sm story-exit-btn">
-                            ✕ End Story & Explore
+                        <button id="end-story-btn" class="btn btn-outline-light btn-sm story-exit-btn" aria-label="Exit story mode and explore freely">
+                            <span aria-hidden="true">✕</span> End Story & Explore
                         </button>
                     </div>
                 </div>
@@ -190,8 +190,8 @@
                 <!-- ARIA live region for timeline lock announcements -->
                 <div id="timeline-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
                 <!-- Reset Timeline Button (positioned in top-right corner) -->
-                <button id="reset-timeline" class="timeline-reset-btn" title="Reset Timeline">
-                    <span>↻</span>
+                <button id="reset-timeline" class="timeline-reset-btn" title="Reset Timeline" aria-label="Reset timeline to show all years">
+                    <span aria-hidden="true">↻</span>
                 </button>
             </div>
         </div>

@@ -127,13 +127,18 @@ function loadData() {
             // Attach event listener to threshold slider
             thresholdSlider.on("input", function() {
                 const threshold = +this.value;
+
+                // Update ARIA attributes for accessibility
+                d3.select(this)
+                    .attr("aria-valuenow", threshold)
+                    .attr("aria-valuetext", `High if rating is ${threshold.toFixed(1)} or above, Low otherwise`);
+
                 myChart.updateRatingSplit(threshold);
             });
         }, 100);
 
         // Setup reset all filters button
         d3.select("#reset-filters").on("click", function() {
-            this.blur(); // Remove focus after click
             // Reset genre selection to all
             myChart.selectedGenres.clear();
             myChart.genres.forEach(genre => myChart.selectedGenres.add(genre));
@@ -161,7 +166,6 @@ function loadData() {
 
         // Setup reset timeline button (new)
         d3.select("#reset-timeline").on("click", function() {
-            this.blur(); // Remove focus after click
             // Reset timeline brush only
             myTimeline.brushGroup.call(myTimeline.brush.move, null);
             myChart.yearRange = null;

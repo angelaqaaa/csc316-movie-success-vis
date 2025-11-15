@@ -114,7 +114,7 @@ class plotChart {
         let vis = this;
 
         // Define color palette (color-blind friendly)
-        vis.highColor = "#ff2919ff"; // Red for high ratings
+        vis.highColor = "#d32f2f"; // Red for high ratings
         vis.lowColor = "#005AB5";    // Blue for low ratings
 
         vis.margin = { top: 10, right: 30, bottom: 60, left: 70 };
@@ -329,7 +329,7 @@ class plotChart {
         const legendSpacing = 28;
 
         const legendData = [
-            { id: "high", color: "#ff2919ff", label: `High (≥${vis.ratingSplit.toFixed(1)})`, threshold: vis.ratingSplit },
+            { id: "high", color: "#d32f2f", label: `High (≥${vis.ratingSplit.toFixed(1)})`, threshold: vis.ratingSplit },
             { id: "low", color: "#005AB5", label: `Low (<${vis.ratingSplit.toFixed(1)})`, threshold: 0 }
         ];
 
@@ -345,18 +345,16 @@ class plotChart {
             .attr("class", "legend-item")
             .attr("transform", (d, i) => `translate(0, ${i * legendSpacing})`)
             .style("cursor", "pointer")
-            .attr("tabindex", "-1") // Remove from tab order
+            .attr("tabindex", "0") // Make keyboard accessible in explore mode
             .attr("role", "button")
             .attr("aria-pressed", "true")
-            .attr("aria-label", d => `Toggle ${d.label}`)
+            .attr("aria-label", d => `Toggle ${d.label} rating band`)
             .on("click", function(event, d) {
-                this.blur(); // Remove focus after click
                 vis.toggleRatingBand(d.id);
             })
             .on("keydown", function(event, d) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    this.blur(); // Remove focus after keypress
                     vis.toggleRatingBand(d.id);
                 }
             });
@@ -406,17 +404,15 @@ class plotChart {
             .attr("class", "reset-legend-btn")
             .attr("transform", `translate(0, ${legendSpacing * 2})`)
             .style("cursor", "pointer")
-            .attr("tabindex", "-1")
+            .attr("tabindex", "0")
             .attr("role", "button")
-            .attr("aria-label", "Reset legend filters")
+            .attr("aria-label", "Reset legend filters to default")
             .on("click", function() {
-                this.blur(); // Remove focus after click
                 vis.resetLegend();
             })
             .on("keydown", function(event) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    this.blur(); // Remove focus after keypress
                     vis.resetLegend();
                 }
             });
