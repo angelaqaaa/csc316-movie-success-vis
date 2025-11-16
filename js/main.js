@@ -197,6 +197,11 @@ function loadData() {
 
             // Clear context-click artifacts (reference lines and annotations)
             myChart.clearContextClick();
+
+            // Clear any active spotlight effect
+            if (myChart.clearSpotlight) {
+                myChart.clearSpotlight();
+            }
         });
 
         // Setup reset timeline button (new)

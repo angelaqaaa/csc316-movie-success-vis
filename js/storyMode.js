@@ -211,6 +211,11 @@ class StoryManager {
         this.plotChart.transitionDuration = 0;
         this.timeline.programmaticDuration = 0;
 
+        // Clear any timeline lock state from story mode
+        if (this.timeline.isLocked) {
+            this.timeline.clearLock();
+        }
+
         // Reset axes to use correct scales (fix for stuck x-axis after story mode)
         // This ensures the axis generators are not using stale transformed scales
         this.plotChart.xAxis.scale(this.plotChart.xScale);
@@ -278,84 +283,56 @@ class StoryManager {
             .style('cursor', null)
             .style('opacity', null);
 
-        // Re-enable timeline interactions (need to call timeline's init method bindings)
-        // Re-attach the event handlers that were removed
+        // Re-enable timeline click interactions that were disabled during story mode
+        // NOTE: mousemove/mouseleave handlers were never removed, so don't re-attach them
+        // Only re-attach click.lock and dblclick.lock which were removed in startStory()
         const timeline = this.timeline;
         timeline.svg
-            .on("mousemove.highlight", function(event) {
-                if (timeline.graceTimer) {
-                    clearTimeout(timeline.graceTimer);
-                    timeline.graceTimer = null;
-                }
-                if (timeline.isLocked) return;
-                if (timeline.animationFrame) return;
-
-                timeline.animationFrame = requestAnimationFrame(() => {
-                    const [mouseX] = d3.pointer(event, this);
-                    let hoveredYear = Math.round(timeline.xScale.invert(mouseX));
-                    const [minDomain, maxDomain] = timeline.xScale.domain();
-                    hoveredYear = Math.max(minDomain, Math.min(maxDomain, hoveredYear));
-
-                    const xPos = timeline.xScale(hoveredYear);
-                    timeline.hairlineGroup
-                        .attr("transform", `translate(${xPos}, 0)`)
-                        .style("opacity", 1);
-
-                    timeline.hairlineLabel.text(hoveredYear);
-                    const labelBBox = timeline.hairlineLabel.node().getBBox();
-                    timeline.hairlineLabelBg
-                        .attr("x", -labelBBox.width / 2 - 4)
-                        .attr("width", labelBBox.width + 8);
-
-                    if (timeline.onYearHover && timeline.hoveredYear !== hoveredYear) {
-                        timeline.hoveredYear = hoveredYear;
-                        timeline.onYearHover(hoveredYear);
-                    }
-
-                    timeline.animationFrame = null;
-                });
-            })
-            .on("mouseleave.highlight", function() {
-                if (timeline.animationFrame) {
-                    cancelAnimationFrame(timeline.animationFrame);
-                    timeline.animationFrame = null;
-                }
-                if (timeline.isLocked) return;
-
-                timeline.graceTimer = setTimeout(() => {
-                    timeline.hairlineGroup.style("opacity", 0);
-                    timeline.hoveredYear = null;
-                    if (timeline.onYearHover) {
-                        timeline.onYearHover(null);
-                    }
-                    timeline.graceTimer = null;
-                }, 550);
-            })
             .on("click.lock", function(event) {
+                // Disable click-to-lock during story mode (but hover still works)
+                if (timeline.isStoryModeActive) return;
+
+                // Ignore click if brushing (avoid conflicts)
                 const brushSelection = d3.brushSelection(timeline.brushGroup.node());
                 if (brushSelection) return;
 
                 const [mouseX] = d3.pointer(event, this);
                 let clickedYear = Math.round(timeline.xScale.invert(mouseX));
+
+                // Clamp year to scale domain
                 const [minDomain, maxDomain] = timeline.xScale.domain();
                 clickedYear = Math.max(minDomain, Math.min(maxDomain, clickedYear));
 
+                // Toggle lock state
                 if (timeline.isLocked && timeline.lockedYear === clickedYear) {
+                    // Unlock: clicking the same year again
                     timeline.clearLock();
                 } else {
+                    // Lock: new year or first lock
                     timeline.lockYear(clickedYear);
                 }
             })
             .on("dblclick.lock", function(event) {
-                event.preventDefault();
+                // Disable double-click-to-lock during story mode (but hover still works)
+                if (timeline.isStoryModeActive) return;
+
+                // Double-click to lock works even when brush is active
+                // This allows locking a year when brushed (since single click is used for brush)
+                event.preventDefault(); // Prevent default double-click behavior
+
                 const [mouseX] = d3.pointer(event, this);
                 let clickedYear = Math.round(timeline.xScale.invert(mouseX));
+
+                // Clamp year to scale domain
                 const [minDomain, maxDomain] = timeline.xScale.domain();
                 clickedYear = Math.max(minDomain, Math.min(maxDomain, clickedYear));
 
+                // Toggle lock state
                 if (timeline.isLocked && timeline.lockedYear === clickedYear) {
+                    // Unlock: double-clicking the same year again
                     timeline.clearLock();
                 } else {
+                    // Lock: new year or first lock
                     timeline.lockYear(clickedYear);
                 }
             });

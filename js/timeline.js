@@ -125,6 +125,7 @@ class Timeline {
             .attr("y2", 10)
             .attr("stroke", "#e50914")
             .attr("stroke-width", 1)
+            .attr("stroke-opacity", 1)
             .attr("stroke-dasharray", "3,3");
 
         // Add background rectangle for year label (for better readability)
@@ -209,11 +210,17 @@ class Timeline {
                     const [minDomain, maxDomain] = vis.xScale.domain();
                     hoveredYear = Math.max(minDomain, Math.min(maxDomain, hoveredYear));
 
-                    // Update hairline position
+                    // Update hairline position and bring to front
                     const xPos = vis.xScale(hoveredYear);
                     vis.hairlineGroup
                         .attr("transform", `translate(${xPos}, 0)`)
-                        .style("opacity", 1);
+                        .style("opacity", 1)
+                        .raise(); // Bring hairline to top so it's not covered by trend line
+
+                    // Ensure hairline stroke is visible (fix for post-story mode)
+                    vis.hairline
+                        .attr("stroke", "#e50914")
+                        .attr("stroke-opacity", 1);
 
                     vis.hairlineLabel.text(hoveredYear);
 
@@ -258,6 +265,9 @@ class Timeline {
                 }, 550);
             })
             .on("click.lock", function(event) {
+                // Disable click-to-lock during story mode (but hover still works)
+                if (vis.isStoryModeActive) return;
+
                 // Ignore click if brushing (avoid conflicts)
                 const brushSelection = d3.brushSelection(vis.brushGroup.node());
                 if (brushSelection) return;
@@ -279,6 +289,9 @@ class Timeline {
                 }
             })
             .on("dblclick.lock", function(event) {
+                // Disable double-click-to-lock during story mode (but hover still works)
+                if (vis.isStoryModeActive) return;
+
                 // Double-click to lock works even when brush is active
                 // This allows locking a year when brushed (since single click is used for brush)
                 event.preventDefault(); // Prevent default double-click behavior
@@ -302,6 +315,9 @@ class Timeline {
 
         // Add keyboard navigation
         svgElement.on("keydown", function(event) {
+            // Disable keyboard lock during story mode (but hover still works)
+            if (vis.isStoryModeActive) return;
+
             // Get year range from data
             if (!vis.displayData || vis.displayData.length === 0) return;
 
@@ -364,7 +380,13 @@ class Timeline {
                         const xPos = vis.xScale(newYear);
                         vis.hairlineGroup
                             .attr("transform", `translate(${xPos}, 0)`)
-                            .style("opacity", 1);
+                            .style("opacity", 1)
+                            .raise(); // Bring hairline to top so it's not covered by trend line
+
+                        // Ensure hairline stroke is visible
+                        vis.hairline
+                            .attr("stroke", "#e50914")
+                            .attr("stroke-opacity", 1);
 
                         vis.hairlineLabel.text(newYear);
 
@@ -447,9 +469,11 @@ class Timeline {
             // Update brush extent (preserve original Y offset for shortened brush)
             vis.brush.extent([[0, vis.brushYOffset], [vis.width, vis.height]]);
 
-            // Update hairline height
+            // Update hairline height (both y1 and y2 need to match new height)
             if (vis.hairline) {
-                vis.hairline.attr("y2", vis.height);
+                vis.hairline
+                    .attr("y1", vis.height)  // Bottom of timeline
+                    .attr("y2", 10);          // Top of timeline (near title)
             }
 
             // Redraw
@@ -622,7 +646,8 @@ class Timeline {
         const xPos = vis.xScale(year);
         vis.hairlineGroup
             .attr("transform", `translate(${xPos}, 0)`)
-            .style("opacity", 1);
+            .style("opacity", 1)
+            .raise(); // Bring hairline to top so it's not covered by trend line
 
         // Update hairline to solid stroke (locked state)
         vis.hairline
@@ -675,7 +700,9 @@ class Timeline {
         // Reset hairline to dashed stroke (hover state)
         vis.hairline
             .attr("stroke-dasharray", "3,3")
-            .attr("stroke-width", 1);
+            .attr("stroke-width", 1)
+            .attr("stroke", "#e50914")
+            .attr("stroke-opacity", 1);
 
         // Hide lock icon and clear button
         vis.lockIcon
@@ -689,7 +716,7 @@ class Timeline {
             .style("opacity", 0)
             .style("pointer-events", "none");
 
-        // Hide hairline
+        // Hide hairline (will reappear on mousemove)
         vis.hairlineGroup.style("opacity", 0);
 
         // Clear highlights on chart

@@ -217,10 +217,7 @@ class plotChart {
                 vis.chartArea.selectAll(".dot")
                     .classed("is-highlighted", false)
                     .classed("is-dimmed", false);
-                // Hide timeline hairline if it exists
-                if (vis.timeline.hairlineGroup) {
-                    vis.timeline.hairlineGroup.style("opacity", 0);
-                }
+                // Don't hide hairline - let timeline's own mouseleave handler manage it
                 vis.timeline.hoveredYear = null;
             }
         });
@@ -730,6 +727,11 @@ class plotChart {
     highlightYear(year) {
         let vis = this;
 
+        // Don't apply highlight classes if spotlight is active
+        if (vis.spotlightActive) {
+            return;
+        }
+
         vis.chartArea.selectAll(".dot")
             .classed("is-highlighted", d => year !== null && d.Released_Year === year)
             .classed("is-dimmed", d => year !== null && d.Released_Year !== year);
@@ -789,6 +791,17 @@ class plotChart {
         vis.chartArea.selectAll(".dot")
             .attr("cx", d => newXScale(d.Released_Year))
             .attr("cy", d => newYScale(d.Gross));
+
+        // Update spotlight halo position if active
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            const targetMovie = vis.featuredMovies[vis.spotlightActive];
+            const newCx = newXScale(targetMovie.Released_Year);
+            const newCy = newYScale(targetMovie.Gross);
+
+            vis.chartArea.selectAll(".spotlight-halo-group circle")
+                .attr("cx", newCx)
+                .attr("cy", newCy);
+        }
 
         // Update annotations with zoom
         vis.updateAnnotationsWithZoom(newXScale, newYScale);
@@ -1286,6 +1299,12 @@ class plotChart {
 
         if (vis.displayData.length === 0) {
             d3.select("#featured-movies").style("display", "none");
+            // Clear featured movie references
+            vis.featuredMovies = {
+                highestGrossing: null,
+                highestRated: null,
+                hiddenGem: null
+            };
             return;
         }
 
@@ -1308,8 +1327,9 @@ class plotChart {
         let medianGross = d3.median(vis.displayData, d => d.Gross);
         let hiddenGems = vis.displayData.filter(d => d.Gross < medianGross);
 
+        let hiddenGem = null;
         if (hiddenGems.length > 0) {
-            let hiddenGem = hiddenGems.reduce((max, d) =>
+            hiddenGem = hiddenGems.reduce((max, d) =>
                 d.IMDB_Rating > max.IMDB_Rating ? d : max
             );
 
@@ -1318,6 +1338,38 @@ class plotChart {
         } else {
             d3.select("#hidden-gem-title").text("N/A");
             d3.select("#hidden-gem-value").text("Not enough data");
+        }
+
+        // Store references to featured movies for spotlight feature
+        vis.featuredMovies = {
+            highestGrossing: highestGrossing,
+            highestRated: highestRated,
+            hiddenGem: hiddenGem
+        };
+
+        // Check if current spotlight target is still the same movie
+        // If not, clear the spotlight (featured movie has changed due to filtering)
+        if (vis.spotlightActive) {
+            const currentSpotlightMovie = vis.featuredMovies[vis.spotlightActive];
+            const previousSpotlightMovie = vis.previousSpotlightMovie;
+
+            // If the featured movie for this category has changed, clear spotlight
+            if (!currentSpotlightMovie ||
+                !previousSpotlightMovie ||
+                currentSpotlightMovie.Series_Title !== previousSpotlightMovie.Series_Title) {
+                vis.clearSpotlight(false); // Clear without animation
+            }
+        }
+
+        // Store current featured movie for next comparison
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            vis.previousSpotlightMovie = vis.featuredMovies[vis.spotlightActive];
+        }
+
+        // Set up click handlers for featured cards (only once)
+        if (!vis.featuredCardsInitialized) {
+            vis.initializeFeaturedCardHandlers();
+            vis.featuredCardsInitialized = true;
         }
     }
 
@@ -1412,7 +1464,7 @@ class plotChart {
             .attr("r", 5)
             .attr("fill", d => vis.colorScale(d.IMDB_Rating))
             // Let CSS handle stroke styling
-            .attr("opacity", 0)
+            .attr("opacity", 0) // Start at 0 for fade-in effect
             // No tabindex - using roving tabindex pattern on container
             .attr("role", "button")
             .attr("aria-label", d => `${d.Series_Title}, ${d.Released_Year}, $${(d.Gross / 1000000).toFixed(1)}M gross, ${d.IMDB_Rating}/10 rating`);
@@ -1703,10 +1755,7 @@ class plotChart {
                                 .classed("is-dimmed", false);
                             // Clear timeline pulse
                             vis.timeline.highlightYearOnTimeline(null);
-                            // Hide timeline hairline
-                            if (vis.timeline.hairlineGroup) {
-                                vis.timeline.hairlineGroup.style("opacity", 0);
-                            }
+                            // Don't hide hairline - let timeline's own mouseleave handler manage it
                             vis.timeline.hoveredYear = null;
                         }
                         vis.timeline.graceTimer = null;
@@ -1734,6 +1783,9 @@ class plotChart {
                 vis.showContextClick(d);
             })
             // No focus/blur handlers - using roving tabindex pattern on container
+
+        // Apply the position transition
+        mergedCircles
             .interrupt() // Stop any ongoing transitions
             .transition("update")
             .duration(300)
@@ -1760,12 +1812,73 @@ class plotChart {
                 return vis.yScale(d.Gross);
             })
             .attr("r", 5)
-            .attr("fill", d => vis.colorScale(d.IMDB_Rating))
-            .attr("opacity", 0.8);
+            .attr("fill", d => vis.colorScale(d.IMDB_Rating));
+
+        // Handle opacity separately from the transition to avoid conflicts
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            const targetMovie = vis.featuredMovies[vis.spotlightActive];
+            // Apply immediately using inline style with !important
+            mergedCircles.each(function(d) {
+                const dot = d3.select(this);
+
+                // Remove any conflicting classes
+                dot.classed("is-highlighted", false)
+                   .classed("is-dimmed", false)
+                   .classed("is-active", false);
+
+                const currentStyle = dot.attr("style") || "";
+                const baseStyle = currentStyle.replace(/opacity:[^;]*;?/gi, "").trim();
+
+                if (d && d.Series_Title && d.Series_Title === targetMovie.Series_Title) {
+                    dot.attr("style", baseStyle + "; opacity: 1 !important");
+                } else {
+                    dot.attr("style", baseStyle + "; opacity: 0.1 !important");
+                }
+            });
+        } else {
+            // Default opacity with transition - remove any inline opacity style first
+            mergedCircles.each(function() {
+                const dot = d3.select(this);
+                const currentStyle = dot.attr("style") || "";
+                const newStyle = currentStyle.replace(/opacity:[^;]*;?/gi, "").trim();
+                dot.attr("style", newStyle || null);
+            });
+
+            mergedCircles.transition("opacity")
+                .duration(300)
+                .style("opacity", 0.8);
+        }
 
         // Re-apply locked year highlights after rendering (if timeline is locked)
         if (vis.timeline && vis.timeline.isLocked && vis.timeline.lockedYear) {
             vis.highlightYear(vis.timeline.lockedYear);
+        }
+
+        // Update spotlight halo position if spotlight is active
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            const targetMovie = vis.featuredMovies[vis.spotlightActive];
+
+            // Get the current scale (considering zoom)
+            let xScale = vis.xScale;
+            let yScale = vis.yScale;
+            if (vis.currentTransform && (
+                vis.currentTransform.k !== 1 ||
+                vis.currentTransform.x !== 0 ||
+                vis.currentTransform.y !== 0
+            )) {
+                xScale = vis.currentTransform.rescaleX(vis.xScale);
+                yScale = vis.currentTransform.rescaleY(vis.yScale);
+            }
+
+            const newCx = xScale(targetMovie.Released_Year);
+            const newCy = yScale(targetMovie.Gross);
+
+            // Update halo position with smooth transition
+            vis.chartArea.selectAll(".spotlight-halo-group circle")
+                .transition()
+                .duration(300)
+                .attr("cx", newCx)
+                .attr("cy", newCy);
         }
 
         // Add annotations for insights
@@ -3151,5 +3264,276 @@ class plotChart {
         // Reset state
         vis.contextClickActive = false;
         vis.contextClickedMovie = null;
+    }
+
+    /**
+     * Initialize click handlers for featured movie cards
+     */
+    initializeFeaturedCardHandlers() {
+        let vis = this;
+
+        // Initialize spotlight state
+        vis.spotlightActive = null; // null or 'highestGrossing' or 'highestRated' or 'hiddenGem'
+        vis.previousTransform = null; // Store transform before spotlight
+
+        // Add click handlers to each featured card
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .style("cursor", "pointer")
+            .on("click", function() {
+                const card = d3.select(this);
+
+                // Determine which card was clicked based on its content
+                let cardType = null;
+                if (card.select(".featured-icon").text() === "💰") {
+                    cardType = "highestGrossing";
+                } else if (card.select(".featured-icon").text() === "⭐") {
+                    cardType = "highestRated";
+                } else if (card.select(".featured-icon").text() === "💎") {
+                    cardType = "hiddenGem";
+                }
+
+                if (cardType) {
+                    vis.toggleSpotlight(cardType);
+                }
+            });
+    }
+
+    /**
+     * Toggle spotlight on a featured movie
+     * @param {string} cardType - 'highestGrossing', 'highestRated', or 'hiddenGem'
+     */
+    toggleSpotlight(cardType) {
+        let vis = this;
+
+        // Check if we're toggling the same spotlight off
+        if (vis.spotlightActive === cardType) {
+            vis.clearSpotlight();
+            return;
+        }
+
+        // Clear any existing spotlight
+        if (vis.spotlightActive) {
+            vis.clearSpotlight(false); // Don't animate out, we'll animate to new target
+        }
+
+        const targetMovie = vis.featuredMovies[cardType];
+
+        // Check if movie exists
+        if (!targetMovie) {
+            console.log(`No movie found for ${cardType}`);
+            return;
+        }
+
+        // Check if the movie is still visible in the current filtered data
+        const movieStillVisible = vis.displayData.some(d => d.Series_Title === targetMovie.Series_Title);
+        if (!movieStillVisible) {
+            console.log(`${targetMovie.Series_Title} is not visible with current filters`);
+            // Clear spotlight state but don't show any effects
+            vis.spotlightActive = null;
+            vis.previousTransform = null;
+            // Remove active state from cards
+            d3.select("#featured-movies").selectAll(".featured-card")
+                .classed("spotlight-active", false);
+            return;
+        }
+
+        // Set the active spotlight
+        vis.spotlightActive = cardType;
+        vis.previousSpotlightMovie = targetMovie; // Store for comparison after filter changes
+
+        // Store current transform before spotlight (if not already in spotlight mode)
+        if (!vis.previousTransform) {
+            vis.previousTransform = vis.currentTransform || d3.zoomIdentity;
+        }
+
+        // Add active state to the card
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .classed("spotlight-active", false);
+
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .filter(function() {
+                const icon = d3.select(this).select(".featured-icon").text();
+                return (cardType === "highestGrossing" && icon === "💰") ||
+                       (cardType === "highestRated" && icon === "⭐") ||
+                       (cardType === "hiddenGem" && icon === "💎");
+            })
+            .classed("spotlight-active", true);
+
+        // Fade all dots except the spotlight target
+        const allDots = vis.chartArea.selectAll(".dot");
+        console.log(`Applying spotlight to ${allDots.size()} dots. Target: ${targetMovie.Series_Title}`);
+
+        // Force immediate opacity change without any transitions
+        allDots.each(function(d) {
+            const dot = d3.select(this);
+
+            // Stop ALL transitions on this element
+            dot.interrupt();
+            dot.transition().duration(0); // Kill any pending transitions
+
+            // Remove any highlight classes that have !important opacity rules
+            dot.classed("is-highlighted", false)
+               .classed("is-dimmed", false)
+               .classed("is-active", false);
+
+            if (!d || !d.Series_Title) {
+                console.warn("Dot has no data or Series_Title", d);
+                // Use inline style with !important to override CSS
+                dot.attr("style", function() {
+                    const currentStyle = d3.select(this).attr("style") || "";
+                    return currentStyle.replace(/opacity:[^;]*/g, "") + "; opacity: 0.1 !important";
+                });
+                return;
+            }
+
+            const isTarget = d.Series_Title === targetMovie.Series_Title;
+            if (isTarget) {
+                console.log(`Found target movie: ${d.Series_Title}`);
+                // Use inline style with !important to override CSS
+                dot.attr("style", function() {
+                    const currentStyle = d3.select(this).attr("style") || "";
+                    return currentStyle.replace(/opacity:[^;]*/g, "") + "; opacity: 1 !important";
+                });
+            } else {
+                // Use inline style with !important to override CSS
+                dot.attr("style", function() {
+                    const currentStyle = d3.select(this).attr("style") || "";
+                    return currentStyle.replace(/opacity:[^;]*/g, "") + "; opacity: 0.1 !important";
+                });
+            }
+        });
+
+        // Add spotlight effect to the target dot
+        vis.chartArea.selectAll(".dot")
+            .filter(d => d.Series_Title === targetMovie.Series_Title)
+            .classed("spotlight-target", true)
+            .each(function() {
+                const dot = d3.select(this);
+
+                // Create a spotlight halo effect
+                const spotlightGroup = vis.chartArea.append("g")
+                    .attr("class", "spotlight-halo-group");
+
+                const cx = dot.attr("cx");
+                const cy = dot.attr("cy");
+
+                // Add multiple concentric circles for halo effect
+                [30, 20, 10].forEach((radius, i) => {
+                    spotlightGroup.append("circle")
+                        .attr("cx", cx)
+                        .attr("cy", cy)
+                        .attr("r", 0)
+                        .attr("fill", "none")
+                        .attr("stroke", "#FFD700")
+                        .attr("stroke-width", 2 - i * 0.5)
+                        .attr("opacity", 0)
+                        .transition()
+                        .duration(400)
+                        .delay(i * 100)
+                        .attr("r", radius)
+                        .attr("opacity", 0.6 - i * 0.2);
+                });
+
+                // Add pulsing animation to the halo
+                spotlightGroup.selectAll("circle")
+                    .transition()
+                    .delay(600)
+                    .duration(1500)
+                    .attr("opacity", 0.2)
+                    .transition()
+                    .duration(1500)
+                    .attr("opacity", 0.6)
+                    .on("end", function repeat() {
+                        d3.select(this)
+                            .transition()
+                            .duration(1500)
+                            .attr("opacity", 0.2)
+                            .transition()
+                            .duration(1500)
+                            .attr("opacity", 0.6)
+                            .on("end", repeat);
+                    });
+            });
+
+        // Calculate zoom and pan to center the featured dot
+        const targetX = vis.xScale(targetMovie.Released_Year);
+        const targetY = vis.yScale(targetMovie.Gross);
+
+        // Calculate the scale to zoom in (3x zoom)
+        const zoomScale = 3;
+
+        // Calculate translation to center the point
+        const centerX = vis.width / 2;
+        const centerY = vis.height / 2;
+
+        // Create the zoom transform
+        const transform = d3.zoomIdentity
+            .translate(centerX, centerY)
+            .scale(zoomScale)
+            .translate(-targetX, -targetY);
+
+        // Apply the zoom transform with animation
+        vis.svgContainer.transition()
+            .duration(750)
+            .call(vis.zoom.transform, transform);
+    }
+
+    /**
+     * Clear spotlight effect and restore normal view
+     * @param {boolean} animate - Whether to animate the transition
+     */
+    clearSpotlight(animate = true) {
+        let vis = this;
+
+        if (!vis.spotlightActive) return;
+
+        // Remove active state from cards
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .classed("spotlight-active", false);
+
+        // Remove spotlight halo
+        vis.chartArea.selectAll(".spotlight-halo-group")
+            .transition()
+            .duration(animate ? 400 : 0)
+            .attr("opacity", 0)
+            .remove();
+
+        // Remove spotlight class from dots
+        vis.chartArea.selectAll(".dot")
+            .classed("spotlight-target", false);
+
+        // Restore all dots to normal opacity
+        vis.chartArea.selectAll(".dot").each(function() {
+            const dot = d3.select(this);
+            dot.interrupt(); // Cancel any ongoing transitions
+
+            // Remove inline opacity style to restore default
+            const currentStyle = dot.attr("style") || "";
+            const newStyle = currentStyle.replace(/opacity:[^;]*;?/gi, "").trim();
+            dot.attr("style", newStyle || null);
+
+            // Now apply default opacity
+            if (animate) {
+                dot.transition()
+                    .duration(400)
+                    .style("opacity", 0.8);
+            } else {
+                dot.style("opacity", 0.8);
+            }
+        });
+
+        // Restore previous zoom transform
+        if (animate && vis.previousTransform) {
+            vis.svgContainer.transition()
+                .duration(750)
+                .call(vis.zoom.transform, vis.previousTransform);
+        } else if (vis.previousTransform) {
+            vis.svgContainer.call(vis.zoom.transform, vis.previousTransform);
+        }
+
+        // Clear state
+        vis.spotlightActive = null;
+        vis.previousTransform = null;
+        vis.previousSpotlightMovie = null;
     }
 }

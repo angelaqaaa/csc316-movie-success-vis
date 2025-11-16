@@ -416,21 +416,23 @@
 /* ========== STORY MODE GOLD ANNOTATION DOTS - WITH PULSING ========== */
 
 .dot.story-annotation-dot {
-  stroke: #B8860B !important;  /* Darker gold (DarkGoldenrod) instead of bright #FFD700 */
-  stroke-width: 2px !important;
+  stroke: #FFD700 !important;  /* Bright gold for better visibility */
+  stroke-width: 3px !important;  /* Thicker stroke for more prominence */
   animation: pulse-gold 1.5s ease-in-out infinite !important;
 }
 
 @keyframes pulse-gold {
   0%, 100% {
     opacity: 1;
-    filter: drop-shadow(0 0 6px rgba(184, 134, 11, 0.8))
-            drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9));
+    filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.9))
+            drop-shadow(0 0 20px rgba(255, 215, 0, 0.6))
+            drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9));
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 12px rgba(184, 134, 11, 1))
-            drop-shadow(0 2px 5px rgba(0, 0, 0, 1));
+    filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1))
+            drop-shadow(0 0 30px rgba(255, 215, 0, 0.8))
+            drop-shadow(0 3px 6px rgba(0, 0, 0, 1));
   }
 }
 
