@@ -2697,9 +2697,11 @@ class plotChart {
             .attr("font-weight", "bold")
             .text(contextInfo.label);
 
+        const textIndentTemp = 20; // Consistent with actual text
+
         const grossText = tempAnnotation.append("text")
             .attr("class", "context-detail")
-            .attr("x", 15)
+            .attr("x", textIndentTemp)
             .attr("y", 50)
             .attr("fill", "#ffffff")
             .attr("font-size", "13px");
@@ -2715,7 +2717,7 @@ class plotChart {
 
         const ratingText = tempAnnotation.append("text")
             .attr("class", "context-detail")
-            .attr("x", 15)
+            .attr("x", textIndentTemp)
             .attr("y", 72)
             .attr("fill", "#ffffff")
             .attr("font-size", "13px");
@@ -2735,7 +2737,9 @@ class plotChart {
 
         // Calculate annotation dimensions with padding
         const padding = 20;
-        const annotationWidth = Math.max(tempBBox.width + padding * 2, 200); // Min width 200px
+        // Add extra space for the question mark button (40px gap + button width)
+        const buttonSpace = 60; // Space needed for button and minimum gap
+        const annotationWidth = Math.max(tempBBox.width + padding * 2 + buttonSpace, 250); // Min width 250px, plus space for button
         const annotationHeight = tempBBox.height + padding * 2;
 
         // Calculate annotation position (offset to avoid overlap)
@@ -2776,8 +2780,8 @@ class plotChart {
             .attr("rx", 8)
             .style("filter", "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))");
 
-        // Label text (centered)
-        annotation.append("text")
+        // First create the label to measure its actual width
+        const labelText = annotation.append("text")
             .attr("class", "context-label")
             .attr("x", annotationWidth / 2)
             .attr("y", 25)
@@ -2788,10 +2792,215 @@ class plotChart {
             .style("text-shadow", "0 1px 2px rgba(0,0,0,0.5)")
             .text(contextInfo.label);
 
+        // Measure the actual label width to position button correctly
+        const labelBBox = labelText.node().getBBox();
+        // Ensure sufficient spacing: at least 40px from text for longest titles
+        const minButtonX = (annotationWidth / 2) + (labelBBox.width / 2) + 40; // 40px minimum gap (increased for BLOCKBUSTER OUTPERFORMER)
+        const maxButtonX = annotationWidth - 25; // 25px from right edge
+        const buttonX = Math.min(maxButtonX, minButtonX);
+
+        // Add help button (question mark) with proper spacing from label
+        const helpButton = annotation.append("g")
+            .attr("class", "context-help-button")
+            .attr("transform", `translate(${buttonX}, 20)`)
+            .style("cursor", "pointer")
+            .style("pointer-events", "all"); // Ensure button is clickable
+
+        // Invisible larger hit area for easier clicking
+        helpButton.append("circle")
+            .attr("r", 15)
+            .attr("fill", "transparent")
+            .style("pointer-events", "all");
+
+        // Button background circle with gradient for 3D effect
+        helpButton.append("circle")
+            .attr("r", 11)
+            .attr("fill", "#4a4a4a")
+            .attr("stroke", "#999")
+            .attr("stroke-width", 2)
+            .style("filter", "drop-shadow(0 2px 5px rgba(0,0,0,0.6))")
+            .style("transition", "all 0.2s ease")
+            .style("pointer-events", "all"); // Make sure circle is clickable
+
+        helpButton.append("text")
+            .attr("text-anchor", "middle")
+            .attr("y", 4.5)
+            .attr("fill", "#fff")
+            .attr("font-size", "14px")
+            .attr("font-weight", "bold")
+            .style("pointer-events", "none")
+            .text("?");
+
+        // Create help tooltip (hidden by default)
+        const helpTooltip = annotation.append("g")
+            .attr("class", "context-help-tooltip")
+            .attr("opacity", 0)
+            .style("pointer-events", "none")
+            .style("display", "none");
+
+        // Auto-sized tooltip with proper spacing
+        const tooltipPadding = 15;
+        const tooltipWidth = 300;
+        const tooltipHeight = 210; // Increased to accommodate more spacing around divider
+
+        // Tooltip background with gradient for depth
+        helpTooltip.append("rect")
+            .attr("width", tooltipWidth)
+            .attr("height", tooltipHeight)
+            .attr("fill", "#1a1a1a")
+            .attr("stroke", "#FFD700")
+            .attr("stroke-width", 1)
+            .attr("stroke-opacity", 0.3)
+            .attr("rx", 8)
+            .style("filter", "drop-shadow(0 6px 12px rgba(0,0,0,0.8))");
+
+        // Title with underline
+        helpTooltip.append("text")
+            .attr("x", tooltipPadding)
+            .attr("y", tooltipPadding + 14)
+            .attr("font-weight", "bold")
+            .attr("font-size", "13px")
+            .attr("fill", "#FFD700")
+            .text("Context-Click Insights");
+
+        // Add separator line with more spacing
+        helpTooltip.append("line")
+            .attr("x1", tooltipPadding)
+            .attr("x2", tooltipWidth - tooltipPadding)
+            .attr("y1", 42)  // Increased from 35 to give more space after title
+            .attr("y2", 42)
+            .attr("stroke", "#444")
+            .attr("stroke-width", 1);
+
+        // Create structured content for each insight type with better spacing
+        const insights = [
+            { emoji: "🚀", title: "Blockbuster Outperformer", desc: "High ratings + high gross", color: "#ffd700" },
+            { emoji: "💎", title: "Acclaimed Gem", desc: "High ratings + low gross", color: "#87ceeb" },
+            { emoji: "🍿", title: "Critic-Proof Hit", desc: "Low ratings + high gross", color: "#ff6347" },
+            { emoji: "📉", title: "Below Average", desc: "Low ratings + low gross", color: "#999" }
+        ];
+
+        insights.forEach((insight, i) => {
+            const yPos = 60 + (i * 40); // Start at 60 (increased from 50) for more space after divider
+
+            // Create group for each insight
+            const insightGroup = helpTooltip.append("g")
+                .attr("transform", `translate(${tooltipPadding}, ${yPos})`);
+
+            // Emoji
+            insightGroup.append("text")
+                .attr("x", 0)
+                .attr("y", 0)
+                .attr("font-size", "14px")
+                .text(insight.emoji);
+
+            // Title
+            insightGroup.append("text")
+                .attr("x", 22)
+                .attr("y", 0)
+                .attr("font-size", "12px")
+                .attr("fill", insight.color)
+                .attr("font-weight", "600")
+                .text(insight.title);
+
+            // Description on second line with more spacing
+            insightGroup.append("text")
+                .attr("x", 22)
+                .attr("y", 18)  // Increased from 16 to 18 for more line spacing
+                .attr("font-size", "10px")
+                .attr("fill", "#aaa")
+                .text(insight.desc);
+        });
+
+        // Store tooltip dimensions and annotation position for intelligent positioning
+        helpTooltip.datum({
+            width: tooltipWidth,
+            height: tooltipHeight,
+            annotationX: annotationX,
+            annotationY: annotationY,
+            annotationWidth: annotationWidth,
+            annotationHeight: annotationHeight
+        });
+
+        // Toggle help tooltip on button click with intelligent positioning
+        let helpVisible = false;
+        helpButton.on("click", function(event) {
+            event.stopPropagation();
+            event.preventDefault();
+            helpVisible = !helpVisible;
+
+            if (helpVisible) {
+                // Calculate intelligent position for tooltip
+                let tooltipX, tooltipY;
+
+                // Get annotation position in chart coordinates
+                const globalAnnotationX = annotationX;
+                const globalAnnotationY = annotationY;
+
+                // Default: Try to position to the right with gap
+                const gap = 15; // Gap between annotation box and tooltip
+                tooltipX = annotationWidth + gap;
+                tooltipY = -10;
+
+                // Check if tooltip would go beyond right edge
+                if (globalAnnotationX + annotationWidth + tooltipWidth + gap > vis.width) {
+                    // Try to position to the left
+                    tooltipX = -tooltipWidth - gap;
+
+                    // Check if tooltip would go beyond left edge when positioned on left
+                    if (globalAnnotationX + tooltipX < 0) {
+                        // Position below the annotation box
+                        tooltipX = Math.max(-globalAnnotationX, Math.min(0, annotationWidth - tooltipWidth));
+                        tooltipY = annotationHeight + gap;
+
+                        // Check if it would go beyond bottom
+                        if (globalAnnotationY + tooltipY + tooltipHeight > vis.height) {
+                            // Position above the annotation box
+                            tooltipY = -tooltipHeight - gap;
+
+                            // Make sure it doesn't go above top edge
+                            if (globalAnnotationY + tooltipY < 0) {
+                                // Last resort: position at top of screen, offset horizontally
+                                tooltipY = -globalAnnotationY + 10;
+                                tooltipX = annotationWidth + gap; // Try to offset to the side
+                            }
+                        }
+                    }
+                }
+
+                // Final check: ensure tooltip doesn't overlap with annotation box
+                // If tooltip is positioned to the side, ensure vertical separation
+                if (Math.abs(tooltipX) > annotationWidth || tooltipX < -tooltipWidth) {
+                    // Tooltip is to the side, adjust Y if needed to avoid overlap
+                    if (tooltipY > -gap && tooltipY < annotationHeight) {
+                        tooltipY = Math.min(-gap, tooltipY);
+                    }
+                }
+
+                // Apply the calculated position
+                helpTooltip.attr("transform", `translate(${tooltipX}, ${tooltipY})`);
+
+                helpTooltip.style("display", "block");
+                helpTooltip.transition()
+                    .duration(200)
+                    .attr("opacity", 1);
+            } else {
+                helpTooltip.transition()
+                    .duration(200)
+                    .attr("opacity", 0)
+                    .on("end", function() {
+                        helpTooltip.style("display", "none");
+                    });
+            }
+        });
+
+        // Consistent left padding for detail text
+        const textIndent = 20;
+
         // Gross comparison text
         const grossTextFinal = annotation.append("text")
             .attr("class", "context-detail")
-            .attr("x", 15)
+            .attr("x", textIndent)
             .attr("y", 50)
             .attr("fill", "#ffffff")
             .attr("font-size", "13px");
@@ -2805,10 +3014,10 @@ class plotChart {
             .attr("fill", "#ffffff")
             .text(` vs. ${peerStats.context} Avg.`);
 
-        // Rating comparison text
+        // Rating comparison text - aligned with gross text
         const ratingTextFinal = annotation.append("text")
             .attr("class", "context-detail")
-            .attr("x", 15)
+            .attr("x", textIndent)
             .attr("y", 72)
             .attr("fill", "#ffffff")
             .attr("font-size", "13px");
