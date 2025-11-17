@@ -3,9 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Movie Success</title>
+    <title>Movie Success | IMDB Analysis</title>
+    <!-- Favicon using movie emoji -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/3d_enhancements.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
@@ -13,123 +16,227 @@
     
 <body>
 
-
-    <div class="container">
-         <!-- header Section： drop down menu , title -->
-        <div class="header-section">
-            <div class="title-section">
-                <h1 class="title">Commercial Success Of IMDB Top 1000 Movies</h1>
-                <p class="subtitle">Exploring Revenue, Ratings, and Genre Trends Across Decades</p>
-            </div>
-        </div>
-
-        <!-- Instructions -->
-        <div class="instructions">
-            <p><strong>How to explore:</strong> Select genres from dropdown • Drag on timeline to filter years • Double-click timeline to reset year filter • Hover over dots for movie details</p>
-        </div>
-
-        <div class = "controls-stats-panel">
-             <!-- controls-group -->
-
-        <div class="controls-group">
-            <div class="dropdown">
-                <button class="btn btn-secondary" type="button" id="genreDropdownButton" data-bs-toggle="dropdown" aria-expanded="false">
-                    <span id="dropdown-text">Movie Genres</span>
-                    <span class="dropdown-arrow">▼</span>
+    <!-- Welcome Panel Overlay (shown on page load) -->
+    <div id="welcome-overlay" class="welcome-overlay">
+        <div class="welcome-panel">
+            <h2 class="welcome-headline">Do Great Movies Make Great Money?</h2>
+            <p class="welcome-caption">Explore the link between audience ratings, critical acclaim (Metascore), and box office success in the IMDb Top 1000.</p>
+            <div class="welcome-buttons">
+                <button id="explore-own-btn" class="btn btn-outline-light btn-lg" aria-label="Explore the visualization on your own">
+                    <span aria-hidden="true">🔍</span> Explore on Your Own
                 </button>
-                <ul class="dropdown-menu" id="genre-dropdown" aria-labelledby="genreDropdownButton">
-                    <li>
-                        <div class="dropdown-item">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="select-all" checked>
-                                <label class="form-check-label" for="select-all">All Genres</label>
-                            </div>
-                        </div>
-                    </li>
-                    <li><hr class="dropdown-divider"></li>
-                    <!-- Genre options will be dynamically generated -->
-                </ul>
-            </div>
-            <button id="reset-filters" class="btn btn-outline-danger btn-sm reset-btn">
-                <span>↻</span> Reset All
-            </button>
-        </div>
-
-        <!-- Statistics Panel -->
-         
-        <div class="stats-panel">
-  
-            
-            <div class="stat-item">
-                <span class="stat-label">Movies:</span>
-                <span id="movie-count" class="stat-value">0</span>
-            </div>
-            <div class="stat-item">
-
-                <span class="stat-label">Avg Revenue:</span>
-                <span id="avg-gross" class="stat-value">$0M</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Year Range:</span>
-                <span id="year-range" class="stat-value">-</span>
-            </div>
-        </div>
-
-
-        </div>
-       
-        <!-- Loading Indicator -->
-        <div id="loading-indicator" class="loading-indicator">
-            <div class="loading-spinner"></div>
-            <p>Loading movie data...</p>
-        </div>
-
-        <!-- Main Visualization: visualization, slider chart -->
-        <div id="visualization-content" class="visualization-section" style="display: none;">
-    
-
-            <div class="main-chart-section">
-                <svg id="main-chart"></svg>
-            </div>
-            <div class="slider-section">
-                <svg id="slider-chart"></svg>
-            </div>
-        </div>
-
-        <!-- Featured Movies Section -->
-        <div id="featured-movies" class="featured-movies" style="display: none;">
-            <h3 class="featured-title">📊 Featured Movies in Current Selection</h3>
-            <div class="featured-grid">
-                <div class="featured-card">
-                    <div class="featured-icon">🏆</div>
-                    <div class="featured-label">Highest Grossing</div>
-                    <div id="highest-grossing-title" class="featured-movie-title">-</div>
-                    <div id="highest-grossing-value" class="featured-value">-</div>
-                </div>
-                <div class="featured-card">
-                    <div class="featured-icon">⭐</div>
-                    <div class="featured-label">Highest Rated</div>
-                    <div id="highest-rated-title" class="featured-movie-title">-</div>
-                    <div id="highest-rated-value" class="featured-value">-</div>
-                </div>
-                <div class="featured-card">
-                    <div class="featured-icon">💎</div>
-                    <div class="featured-label">Underrated Gem</div>
-                    <div class="featured-sublabel">High Rating, Lower Revenue</div>
-                    <div id="hidden-gem-title" class="featured-movie-title">-</div>
-                    <div id="hidden-gem-value" class="featured-value">-</div>
-                </div>
+                <button id="start-guided-story-btn" class="btn btn-danger btn-lg" aria-label="Start guided story mode">
+                    <span aria-hidden="true">📖</span> Start Guided Story
+                </button>
             </div>
         </div>
     </div>
+
+    <div class="container">
+        <!-- First viewport: Core visualization (header to timeline) -->
+        <div class="viewport-content">
+            <!-- Quick Guide - Top Left Corner -->
+            <div class="instructions-corner">
+                <details>
+                    <summary><strong><span aria-hidden="true">💡</span> Quick Guide</strong></summary>
+                    <div class="tips-content">
+                        <span class="tip-item"><span aria-hidden="true">🎯</span> <strong>Click dots</strong> to compare with peer dots</span>
+                        <span class="tip-item"><span aria-hidden="true">🖱️</span> <strong>Click background</strong> to dismiss comparisons</span>
+                        <span class="tip-item"><span aria-hidden="true">📅</span> <strong>Drag timeline</strong> to filter year range</span>
+                        <span class="tip-item"><span aria-hidden="true">🔄</span> <strong>Hover timeline/dots</strong> for cross-highlights</span>
+                        <span class="tip-item"><span aria-hidden="true">🔒</span> <strong>Click timeline</strong> to lock highlighted year</span>
+                        <span class="tip-item"><span aria-hidden="true">↻</span> <strong>Timeline button</strong> resets timeline filter</span>
+                        <span class="tip-item"><span aria-hidden="true">🎬</span> <strong>Genre dropdown</strong> filters by movie type</span>
+                        <span class="tip-item"><span aria-hidden="true">📊</span> <strong>Click legend bands</strong> to toggle ratings</span>
+                        <span class="tip-item"><span aria-hidden="true">📏</span> <strong>Drag legend slider</strong> to adjust split</span>
+                        <span class="tip-item"><span aria-hidden="true">🔍</span> <strong>Cmd+scroll</strong> to zoom, drag to pan</span>
+                        <span class="tip-item"><span aria-hidden="true">📖</span> <strong>Story button</strong> for guided narrative</span>
+
+                    </div>
+                </details>
+            </div>
+
+            <!-- Header Section with just the title -->
+            <div class="header-section">
+                <div class="title-section">
+                    <h1 class="title">Commercial Success Of IMDB Top-Rated Movies</h1>
+                    <p class="subtitle">Exploring Revenue, Ratings, and Genre Trends Across Decades</p>
+                </div>
+            </div>
+
+            <!-- Integrated Filter & Stats Bar -->
+            <div class="filter-bar">
+            <div class="filter-controls">
+                <div class="filter-group">
+                    <label class="filter-label">Genre Filter:</label>
+                    <div class="dropdown">
+                        <button class="btn btn-secondary" type="button" id="genreDropdownButton" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span id="dropdown-text">All Genres</span>
+                            <span class="dropdown-arrow">▼</span>
+                        </button>
+                        <ul class="dropdown-menu" id="genre-dropdown" aria-labelledby="genreDropdownButton">
+                            <li>
+                                <div class="dropdown-item">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="select-all" checked>
+                                        <label class="form-check-label" for="select-all">All Genres</label>
+                                    </div>
+                                </div>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <!-- Genre options will be dynamically generated -->
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Statistics Panel (integrated in middle) -->
+                <div class="stats-panel-integrated">
+                    <div class="stat-item">
+                        <span class="stat-label">Movies:</span>
+                        <span id="movie-count" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Avg Revenue:</span>
+                        <span id="avg-gross" class="stat-value">$0M</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Year Range:</span>
+                        <span id="year-range" class="stat-value">-</span>
+                    </div>
+                </div>
+
+                <div class="filter-actions">
+                    <button id="reset-filters" class="btn btn-outline-danger btn-sm" aria-label="Reset all filters to default settings">
+                        <span aria-hidden="true">↻</span> Reset All
+                    </button>
+                    <button id="start-story-btn" class="btn btn-outline-danger btn-sm" aria-label="Start guided story mode">
+                        <span aria-hidden="true">📖</span> Tell Me a Story
+                    </button>
+                </div>
+            </div>
+        </div>
+
+            <!-- Story Mode Panel (hidden by default) -->
+            <div id="story-panel" class="story-panel" style="display: none;">
+                <div class="story-panel-content">
+                    <!-- Movie Mascot Character -->
+                    <div class="story-mascot" aria-hidden="true">🎬</div>
+
+                    <!-- Story Content Wrapper -->
+                    <div class="story-content-wrapper">
+                        <!-- Story Header -->
+                        <h3 class="story-headline" data-step="STEP 1">
+                            The Story of Movie Success
+                        </h3>
+
+                        <!-- Story Caption (Main Content) -->
+                        <div id="story-caption" class="story-caption" aria-live="polite" aria-atomic="true">
+                            <div id="story-text">Welcome to the story...</div>
+                        </div>
+
+                        <!-- Progress and Meta Info Bar -->
+                        <div class="story-meta-bar">
+                            <!-- Progress Indicators -->
+                            <div class="story-progress">
+                                <span class="story-progress-dot active" data-step="0"></span>
+                                <span class="story-progress-dot" data-step="1"></span>
+                                <span class="story-progress-dot" data-step="2"></span>
+                                <span class="story-progress-dot" data-step="3"></span>
+                                <span class="story-progress-dot" data-step="4"></span>
+                            </div>
+                            <!-- Data Caveat -->
+                            <div class="story-caveat"><span aria-hidden="true">ⓘ</span>&nbsp;Within IMDb Top-830 sample; revenues not inflation-adjusted.</div>
+                        </div>
+                    </div>
+
+                    <!-- Navigation Section -->
+                    <div class="story-nav-wrapper">
+                        <!-- Navigation Buttons -->
+                        <div class="story-navigation">
+                            <button id="story-prev-btn" class="btn btn-secondary btn-sm" disabled aria-label="Go to previous story step">
+                                ← Back
+                            </button>
+                            <button id="story-next-btn" class="btn btn-danger btn-sm" aria-label="Go to next story step">
+                                Next →
+                            </button>
+                        </div>
+                        <!-- End Story Button (below nav) -->
+                        <button id="end-story-btn" class="btn btn-outline-light btn-sm story-exit-btn" aria-label="Exit story mode and explore freely">
+                            <span aria-hidden="true">✕</span> End Story & Explore
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ARIA live region for story announcements -->
+            <div id="story-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+                <!-- Loading Indicator -->
+                <div id="loading-indicator" class="loading-indicator">
+                    <div class="loading-spinner"></div>
+                    <p>Loading movie data...</p>
+                </div>
+
+            <!-- Main Visualization: chart fills first viewport -->
+            <div id="visualization-content" class="visualization-section" style="display: none;">
+                <div class="main-chart-section">
+                    <svg id="main-chart"></svg>
+                </div>
+            </div>
+        </div> <!-- Close viewport-content -->
+
+        <!-- Continuation of visualization (timeline starts on second viewport) -->
+        <div class="visualization-continuation" style="display: none;">
+            <div class="slider-section">
+                <svg id="slider-chart"></svg>
+                <!-- ARIA live region for timeline lock announcements -->
+                <div id="timeline-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+                <!-- Reset Timeline Button (positioned in top-right corner) -->
+                <button id="reset-timeline" class="timeline-reset-btn" title="Reset Timeline" aria-label="Reset timeline to show all years">
+                    <span aria-hidden="true">↻</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Featured Movies Section (second viewport, requires scroll) -->
+        <div id="featured-movies" class="featured-movies" style="display: none;">
+                    <h3 class="featured-title">📊 Featured Movies in Current Selection</h3>
+                    <div class="featured-grid">
+                        <div class="featured-card">
+                            <div class="featured-header">
+                                <span class="featured-icon">💰</span>
+                                <span class="featured-label">Highest Grossing</span>
+                            </div>
+                            <div id="highest-grossing-title" class="featured-movie-title">-</div>
+                            <div id="highest-grossing-value" class="featured-value">-</div>
+                        </div>
+                        <div class="featured-card">
+                            <div class="featured-header">
+                                <span class="featured-icon">⭐</span>
+                                <span class="featured-label">Highest Rated</span>
+                            </div>
+                            <div id="highest-rated-title" class="featured-movie-title">-</div>
+                            <div id="highest-rated-value" class="featured-value">-</div>
+                        </div>
+                        <div class="featured-card">
+                            <div class="featured-header">
+                                <span class="featured-icon">💎</span>
+                                <span class="featured-label">Underrated Gem</span>
+                            </div>
+                            <div id="hidden-gem-title" class="featured-movie-title">-</div>
+                            <div id="hidden-gem-value" class="featured-value">-</div>
+                        </div>
+                    </div>
+        </div> <!-- Close featured-movies -->
+    </div> <!-- Close container -->
 
     <!-- Tooltip -->
     <div id="tooltip" class="tooltip"></div>
 
     <!-- Footer with data source acknowledgement -->
     <footer class="data-source">
-        <p>Data Source: <a href="https://www.kaggle.com/datasets/harshitshankhdhar/imdb-dataset-of-top-1000-movies-and-tv-shows" target="_blank">IMDB Top 1000 Movies Dataset (Kaggle)</a></p>
-        <p>Visualization by Angela Su, Kerry Gu, and Bradley Lin | CSC316 Fall 2024</p>
+        <p>Data Source: <a href="https://www.kaggle.com/datasets/harshitshankhdhar/imdb-dataset-of-top-1000-movies-and-tv-shows" target="_blank" tabindex="-1">IMDB Top 1000 Movies Dataset (Kaggle)</a> - 830 movies after data cleaning</p>
+        <p>Visualization by Kerry Gu, Bradley Lin, and Angela Su | CSC316 Fall 2025</p>
     </footer>
 
 
@@ -143,7 +250,7 @@
      <script src="js/dropdown.js"></script>
     <script src="js/plotChart.js"></script>
     <script src="js/timeline.js"></script>
-
+    <script src="js/storyMode.js"></script>
 
     <!-- load data create visualization object -->
     <script src="js/main.js"></script>

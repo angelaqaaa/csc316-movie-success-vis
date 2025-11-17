@@ -1,0 +1,606 @@
+/* ===== 3D ENHANCEMENTS - Based on Checklist ===== */
+/* Background: #121212 - use lighter shadows for visibility */
+
+/* ========== BUTTONS - BEVELED 3D (from checklist) ========== */
+
+/* Reset/Filter buttons - keep black background */
+.reset-btn,
+.filter-actions .btn,
+#start-story-btn,
+.timeline-reset-btn {
+  background: linear-gradient(145deg, #2a2a2a, #1a1a1a) !important;
+  border: 2px solid transparent !important;
+  border-radius: 6px !important;  /* Round corners like tip/genre buttons */
+  box-shadow:
+    0 6px 12px rgba(0, 0, 0, 0.8),
+    0 2px 4px rgba(0, 0, 0, 0.6),
+    inset 0 2px 2px rgba(255, 255, 255, 0.15),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.6) !important;
+  text-shadow:
+    0 3px 6px rgba(8, 5, 30, 1),
+    0 1px 3px rgba(0, 0, 20, 1),
+    0 0 8px rgba(100, 100, 200, 0.3) !important;
+  transition: all 0.3s ease !important;
+  border-image: none !important;  /* Remove border-image so border-radius works */
+}
+
+/* Story/Welcome buttons - keep their original colors */
+#story-prev-btn,
+#story-next-btn,
+#end-story-btn,
+#explore-own-btn,
+#start-guided-story-btn {
+  box-shadow:
+    0 6px 12px rgba(0, 0, 0, 0.8),
+    0 2px 4px rgba(0, 0, 0, 0.6),
+    inset 0 2px 2px rgba(255, 255, 255, 0.15),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.6) !important;
+  text-shadow:
+    0 1px 3px rgba(22, 17, 59, 0.323),
+    0 1px 2px rgba(32, 32, 93, 0.225),
+    0 0 5px rgba(100, 100, 200, 0.3) !important;
+  transition: all 0.3s ease !important;
+}
+
+.reset-btn:hover,
+.filter-actions .btn:hover,
+#start-story-btn:hover,
+.timeline-reset-btn:hover,
+#story-prev-btn:not(:disabled):hover,
+#story-next-btn:not(:disabled):hover,
+#end-story-btn:hover,
+#explore-own-btn:hover,
+#start-guided-story-btn:hover {
+  transform: translateY(-3px) !important;
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.9),
+    0 4px 8px rgba(229, 9, 20, 0.3),
+    inset 0 2px 3px rgba(255, 255, 255, 0.2),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(229, 9, 20, 0.4) !important;
+  border-color: rgba(229, 9, 20, 0.6) !important;
+}
+
+.reset-btn:active,
+.filter-actions .btn:active,
+#start-story-btn:active,
+.timeline-reset-btn:active,
+#story-prev-btn:active,
+#story-next-btn:active,
+#end-story-btn:active,
+#explore-own-btn:active,
+#start-guided-story-btn:active {
+  transform: translateY(1px) !important;
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.8),
+    inset 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* ========== GENRE DROPDOWN - STRONG NEUMORPHISM ========== */
+
+.dropdown .btn {
+  background: linear-gradient(145deg, #282828, #1a1a1a) !important;
+  box-shadow:
+    10px 10px 20px rgba(0, 0, 0, 0.8),
+    -5px -5px 15px rgba(70, 70, 70, 0.4),
+    inset 0 2px 2px rgba(255, 255, 255, 0.1),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.5) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
+  transition: all 0.3s ease !important;
+  text-shadow:
+    0 3px 6px rgba(8, 5, 30, 1),
+    0 1px 3px rgba(0, 0, 20, 1),
+    0 0 8px rgba(100, 100, 200, 0.3) !important;
+}
+
+.dropdown .btn:hover {
+  background: linear-gradient(145deg, #303030, #202020) !important;
+  box-shadow:
+    15px 15px 30px rgba(0, 0, 0, 0.9),
+    -7px -7px 20px rgba(80, 80, 80, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.15),
+    inset 0 -3px 3px rgba(0, 0, 0, 0.6) !important;
+  transform: translateY(-3px) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.dropdown-menu {
+  background: linear-gradient(135deg, #252525 0%, #1a1a1a 100%) !important;
+  box-shadow:
+    0 15px 50px rgba(0, 0, 0, 0.9),
+    0 5px 20px rgba(0, 0, 0, 0.7),
+    inset 0 2px 2px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.5) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+}
+
+.dropdown-item:hover {
+  background: linear-gradient(90deg, rgba(229, 9, 20, 0.2), transparent) !important;
+  text-shadow:
+    0 2px 5px rgba(15, 0, 10, 1),
+    0 1px 3px rgba(8, 0, 5, 1),
+    0 0 6px rgba(229, 9, 20, 0.2) !important;
+  box-shadow: inset 3px 0 0 rgba(229, 9, 20, 0.6) !important;
+}
+
+/* ========== TIPS PANEL - NEUMORPHISM WITHOUT GLOW ========== */
+
+.instructions-corner summary {
+  background: linear-gradient(145deg, #282828, #1a1a1a) !important;
+  box-shadow:
+    10px 10px 20px rgba(0, 0, 0, 0.8),
+    -5px -5px 15px rgba(70, 70, 70, 0.4),
+    inset 0 2px 2px rgba(255, 255, 255, 0.1),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.5) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
+  transition: all 0.3s ease !important;
+  text-shadow:
+    0 3px 6px rgba(8, 5, 30, 1),
+    0 1px 3px rgba(0, 0, 20, 1),
+    0 0 8px rgba(100, 100, 200, 0.3) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+}
+
+.instructions-corner summary:hover {
+  background: linear-gradient(145deg, #303030, #202020) !important;
+  box-shadow:
+    15px 15px 30px rgba(0, 0, 0, 0.9),
+    -7px -7px 20px rgba(80, 80, 80, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.15),
+    inset 0 -3px 3px rgba(0, 0, 0, 0.6) !important;
+  transform: translateY(-2px) !important;
+  border-color: rgba(0, 180, 255, 0.3) !important;
+}
+
+.instructions-corner[open] summary {
+  border-bottom: 2px solid rgba(229, 9, 20, 0.4) !important;
+  box-shadow:
+    10px 10px 20px rgba(0, 0, 0, 0.8),
+    -5px -5px 15px rgba(70, 70, 70, 0.4),
+    inset 0 -3px 6px rgba(229, 9, 20, 0.2) !important;
+}
+
+.tips-content {
+  background: linear-gradient(135deg, #252525 0%, #1a1a1a 100%) !important;
+  box-shadow:
+    0 15px 50px rgba(0, 0, 0, 0.9),
+    0 5px 20px rgba(0, 0, 0, 0.7),
+    inset 0 2px 2px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.5) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  margin-top: 8px !important;
+}
+
+/* ========== STORY PANEL - 3D FROM CHECKLIST ========== */
+
+.story-panel {
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, #1f1f1f 0%, #151515 100%) !important;
+  box-shadow:
+    0 8px 10px rgba(229, 9, 20, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 2px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.4) !important;
+  border: 2px solid rgba(229, 9, 20, 0.5) !important;
+}
+
+/* ========== LEGEND PANEL - 3D GRADIENT BULGE LIKE TIMELINE ========== */
+
+.legend {
+  position: relative !important;
+  /* Outer shadow for panel depth */
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.7)) !important;
+}
+
+/* Legend background uses SVG radial gradient for bulge effect (gradient defined in JS) */
+.legend-background {
+  transition: all 0.3s ease !important;
+  /* The radial gradient fill is applied via SVG fill attribute in JS */
+  /* Additional depth through inset shadows handled by the gradient itself */
+}
+
+.legend-item {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)) !important;
+}
+
+/* Legend title styling - 3D embossed effect */
+.legend-title,
+.threshold-label {
+  /* Multi-layered text shadow for 3D depth - NO glow */
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25),
+    0 -1px 0 rgba(0, 0, 0, 0.9),
+    0 2px 4px rgba(0, 0, 0, 1),
+    0 3px 8px rgba(0, 0, 0, 0.8) !important;
+  /* No glow filter - user requested removal */
+  font-weight: 600 !important;  /* Semi-bold - more subtle */
+}
+
+/* ========== FILTER BAR / STATS PANEL - SUBTLE DEPTH ========== */
+
+.stats-panel-integrated {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.6),
+    inset 0 2px 2px rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ========== WELCOME PANEL - DEPTH THROUGH SHADOWS ========== */
+
+.welcome-overlay {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.90) 0%, rgba(0, 0, 0, 0.85) 100%) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.welcome-panel {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%) !important;
+  border: 2px solid #e50914 !important;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.9),
+    0 8px 24px rgba(229, 9, 20, 0.3),
+    inset 0 2px 2px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ========== FEATURED CARDS - PERSPECTIVE 3D ========== */
+
+.featured-card {
+  background: linear-gradient(135deg, #252525 0%, #1a1a1a 100%) !important;
+  box-shadow:
+    0 8px 25px rgba(0, 0, 0, 0.8),
+    0 2px 7px rgba(0, 0, 0, 0.6),
+    inset 0 2px 2px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.5) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.1) !important;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+}
+
+.featured-card:hover {
+  transform: perspective(1000px) rotateY(-5deg) translateY(-10px) !important;
+  box-shadow:
+    0 16px 46px rgba(0, 0, 0, 0.9),
+    0 4px 10px rgba(229, 9, 20, 0.3),
+    inset 0 3px 3px rgba(255, 255, 255, 0.12),
+    inset 0 -3px 3px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(229, 9, 20, 0.3) !important;
+}
+
+/* ========== CONTEXT ANNOTATION BOX - SMALLER GLOW ========== */
+
+.context-annotation-box {
+  background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%) !important;
+  border: 2px solid transparent !important;
+  background-image:
+    linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%),
+    linear-gradient(135deg,
+      rgba(0, 180, 255, 0.4) 0%,
+      rgba(0, 120, 200, 0.6) 50%,
+      rgba(0, 180, 255, 0.4) 100%) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  filter: drop-shadow(0 3px 8px rgba(0, 180, 255, 0.2))
+          drop-shadow(0 2px 5px rgba(0, 0, 0, 0.8)) !important;
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.1),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ========== CONTEXT REFERENCE LINES - MODERATE GLOW ========== */
+
+.context-lines line {
+  filter: drop-shadow(0 0 5px rgba(0, 180, 255, 0.8)) drop-shadow(0 0 2px rgba(0, 180, 255, 1)) !important;
+  stroke-width: 2px !important;
+}
+
+/* ========== TIMELINE ELEMENTS - 3D DEPTH ========== */
+
+.dotted-line {
+  filter: drop-shadow(0 0 2px rgba(233, 214, 214, 0.4)) drop-shadow(0 0 3px rgba(229, 9, 20, 1)) !important;
+}
+
+.timeline-hairline {
+  filter: drop-shadow(0 0 3px rgba(229, 9, 20, 1)) drop-shadow(0 0 3px rgba(206, 181, 181, 0.4))!important;
+}
+
+.area {
+  filter: drop-shadow(0 3px 8px rgba(255, 255, 255, 0.15)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8)) !important;
+}
+
+.trend-line {
+  filter: drop-shadow(0 2px 6px rgba(255, 255, 255, 0.2)) drop-shadow(0 1px 4px rgba(0, 0, 0, 0.8)) !important;
+  stroke-width: 2.5px !important;
+}
+
+/* ========== TEXT ELEMENTS - MINIMAL SHADOWS ========== */
+
+.axis text {
+  text-shadow:
+    0 3px 6px rgba(10, 10, 40, 1),
+    0 1px 3px rgba(0, 0, 25, 1),
+    0 0 10px rgba(100, 100, 180, 0.4) !important;
+  font-weight: 500 !important;
+}
+
+.axis line,
+.axis path {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 25, 0.9)) !important;
+}
+
+.axis-label,
+.title {
+  text-shadow:
+    0 4px 10px rgba(25, 0, 0, 1),
+    0 2px 6px rgba(15, 0, 0, 1),
+    0 0 15px rgba(255, 100, 100, 0.3) !important;
+  font-weight: 700 !important;
+}
+
+.header-section h1,
+.header-section .title {
+  text-shadow:
+    0 5px 14px rgba(35, 0, 0, 1),
+    0 3px 8px rgba(20, 0, 0, 1),
+    0 0 18px rgba(229, 9, 20, 0.4) !important;
+  font-weight: 700 !important;
+  padding-bottom: 8px !important;
+  display: inline-block !important;
+}
+
+.subtitle {
+  text-shadow:
+    0 3px 7px rgba(15, 10, 25, 1),
+    0 1px 4px rgba(8, 5, 15, 1) !important;
+}
+
+.filter-label,
+.stat-label {
+  text-shadow:
+    0 2px 5px rgba(8, 5, 30, 1),
+    0 1px 3px rgba(0, 0, 20, 1),
+    0 0 6px rgba(120, 120, 200, 0.25) !important;
+  font-weight: 600 !important;
+}
+
+.story-headline {
+  text-shadow:
+    0 3px 6px rgba(10, 8, 28, 1),
+    0 1px 3px rgba(5, 3, 15, 1),
+    0 0 8px rgba(100, 100, 180, 0.2) !important;
+}
+
+.story-progress-dot {
+  filter: drop-shadow(0 0 15px rgba(229, 9, 20, 0.9)) !important;
+}
+
+.story-mascot {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)) !important;
+}
+
+/* ========== GRID LINES - SUBTLE SHADOW ========== */
+
+.grid line,
+.tick line {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)) !important;
+}
+
+/* ========== ALERT/EMPTY STATE ========== */
+
+.empty-state-overlay {
+  background: linear-gradient(135deg, rgba(26, 26, 26, 0.98) 0%, rgba(18, 18, 18, 0.98) 100%) !important;
+  box-shadow:
+    inset 0 0 80px rgba(0, 0, 0, 0.8),
+    10px 10px 12px rgba(0, 0, 0, 0.9),
+    8px 8px 20px rgba(229, 9, 20, 0.4) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 2px solid rgba(229, 9, 20, 0.5) !important;
+}
+
+/* ========== STORY BADGE - STRONG EXTRUDED 3D ========== */
+
+.story-badge {
+  text-shadow:
+    0 0 0 rgba(150, 0, 0, 0.7),
+    0 1px 0 rgba(130, 0, 0, 0.7),
+    0 2px 0 rgba(70, 0, 0, 0.7) !important;
+  box-shadow:
+    0 2px 4px rgba(229, 9, 20, 0.214),
+    0 1px 2px rgba(0, 0, 0, 1),
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* ========== STORY MODE GOLD ANNOTATION DOTS - WITH PULSING ========== */
+
+.dot.story-annotation-dot {
+  stroke: #FFD700 !important;  /* Bright gold for better visibility */
+  stroke-width: 3px !important;  /* Thicker stroke for more prominence */
+  animation: pulse-gold 1.5s ease-in-out infinite !important;
+}
+
+@keyframes pulse-gold {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.9))
+            drop-shadow(0 0 20px rgba(255, 215, 0, 0.6))
+            drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1))
+            drop-shadow(0 0 30px rgba(255, 215, 0, 0.8))
+            drop-shadow(0 3px 6px rgba(0, 0, 0, 1));
+  }
+}
+
+/* ========== EXPLORE MODE FEATURED ANNOTATION LABELS - 3D EMBOSSED TEXT ========== */
+
+.annotation-label,
+.annotation-label-2,
+.annotation-label-3 {
+  /* Embossed text with colored shadows for depth */
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.3),
+    0 -1px 0 rgba(0, 0, 0, 0.8),
+    0 2px 4px rgba(0, 0, 0, 1),
+    0 0 8px rgba(255, 255, 255, 0.2) !important;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4)) !important;
+}
+
+.annotation-bg-1,
+.annotation-bg-2,
+.annotation-bg-3 {
+  /* 3D background with gradient and embossed edges */
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8))
+          drop-shadow(0 0 6px rgba(255, 255, 255, 0.1)) !important;
+}
+
+/* ========== LEGEND HOVER - SMALLER WHITE GLOW ========== */
+
+.legend-item:hover {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.5)) !important;
+}
+
+/* ========== LEGEND SLIDER - 3D TRACK & HANDLE ========== */
+
+.rating-threshold-slider {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  height: 8px !important;
+  border-radius: 4px !important;
+  /* Keep original slider track appearance - no change to background */
+  outline: none !important;
+}
+
+.rating-threshold-slider::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 50% !important;
+  background: linear-gradient(90deg, #005AB5 0%, #7a3a9f 50%, #e50914 100%) !important;  /* Smooth blue to red gradient */
+  border: 2px solid rgba(255, 255, 255, 0.8) !important;  /* White border line */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.9) !important;  /* Shadow for depth */
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.rating-threshold-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15) !important;
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(150, 50, 150, 0.6) !important;  /* Slightly increased glow on hover */
+}
+
+.rating-threshold-slider::-moz-range-thumb {
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 50% !important;
+  background: linear-gradient(90deg, #005AB5 0%, #7a3a9f 50%, #e50914 100%) !important;  /* Smooth blue to red gradient */
+  border: 2px solid rgba(255, 255, 255, 0.3) !important;  /* White border line */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.9) !important;  /* Shadow for depth */
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.rating-threshold-slider::-moz-range-thumb:hover {
+  transform: scale(1.15) !important;
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(150, 50, 150, 0.6) !important;  /* Slightly increased glow on hover */
+}
+
+/* ========== TIP ITEMS - TEXT STROKE ========== */
+
+.tip-item strong {
+  -webkit-text-stroke: 0.6px rgba(56, 58, 58, 0.817) !important;
+  font-weight: 700 !important;
+}
+
+.tip-item span[aria-hidden="true"] {
+  filter: drop-shadow(0 0 1px rgba(221, 225, 227, 0.3))
+          drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)) !important;
+}
+
+/* ========== TIMELINE PANEL - PERSPECTIVE DEPTH ========== */
+
+.slider-section {
+  position: relative !important;
+  /* Radial gradient bulge: lighter in center, darker on edges */
+  background: radial-gradient(ellipse at center, #242424 0%, #1a1a1a 70%, #111111 100%) !important;
+  border-radius: 12px !important;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.8),
+    0 4px 15px rgba(0, 0, 0, 0.6),
+    inset 0 1px 3px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  padding: 25px !important;
+  /* Transform removed - was breaking SVG rendering */
+}
+
+.slider-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 12px;
+  /* Top-to-bottom highlight overlay for depth */
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 15%,
+    transparent 85%,
+    rgba(0, 0, 0, 0.25) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ========== FEATURED MOVIES PANEL - SIMPLE 3D ========== */
+
+.featured-movies {
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.8),
+    0 4px 15px rgba(0, 0, 0, 0.6),
+    inset 0 2px 3px rgba(255, 255, 255, 0.05),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ========== FOOTER TEXT - EMBOSSED ========== */
+
+footer.data-source,
+footer.data-source p,
+footer.data-source a {
+  -webkit-text-stroke: 1px rgba(63, 63, 68, 0.61) !important;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15),
+    0 -1px 0 rgba(0, 0, 0, 0.9),
+    0 2px 5px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(100, 100, 160, 0.3) !important;
+}
+
+footer.data-source a:hover {
+  -webkit-text-stroke: 0.8px rgba(229, 9, 20, 0.6) !important;
+  text-shadow:
+    0 1px 0 rgba(255, 120, 120, 0.3),
+    0 -1px 0 rgba(0, 0, 0, 1),
+    0 3px 8px rgba(0, 0, 0, 0.9),
+    0 0 15px rgba(229, 9, 20, 0.5) !important;
+  filter: drop-shadow(0 0 5px rgba(229, 9, 20, 0.4)) !important;
+}
+
+/* ========== ACCESSIBILITY ========== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

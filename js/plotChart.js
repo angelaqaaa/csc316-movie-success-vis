@@ -5,12 +5,22 @@ class plotChart {
         this.displayData = [];
         this.selectedGenres = new Set();
         this.yearRange = null;
+        this.ratingSplit = 8.0; // Threshold to split High (≥ t) vs Low (< t)
+        this.ratingExtent = [0, 10]; // Min/max ratings in dataset (computed on init)
         this.isInitialized = false; // Track if charts have been initialized
+        this.visibleRatingBands = new Set(['high', 'low']); // Track visible rating bands
 
-        const million = 1000000;
-        this.yDetailRatio = 0.75; // Portion of vertical space dedicated to 0-500M range
-        this.yBreakDetailed = 500 * million; // 0-500M detailed segment
-        this.yUpperBoundBase = 1000 * million; // Default compressed segment upper bound (1B)
+        // Track active dot for keyboard navigation (roving tabindex pattern)
+        this.activeDotIndex = null; // Index of currently focused dot
+        this.isContainerFocused = false; // Track if container has focus
+        this.isHoveringDot = false; // Track if currently hovering over any dot
+
+        // Track story mode state
+        this.isStoryModeActive = false;
+
+        // Track context-click state (Explore mode only)
+        this.contextClickActive = false;
+        this.contextClickedMovie = null;
 
         this.initVis();
     }
@@ -18,11 +28,23 @@ class plotChart {
     initVis() {
         let vis = this;
 
+        // Compute rating extent from data
+        vis.ratingExtent = d3.extent(vis.data, d => d.IMDB_Rating);
+        // Round outward to nearest 0.1
+        vis.ratingExtent[0] = Math.floor(vis.ratingExtent[0] * 10) / 10;
+        vis.ratingExtent[1] = Math.ceil(vis.ratingExtent[1] * 10) / 10;
+
+        // Clamp default threshold to data extent
+        vis.ratingSplit = Math.max(vis.ratingExtent[0], Math.min(vis.ratingSplit, vis.ratingExtent[1]));
+
         vis.extractGenres();
         vis.initMainChart();
 
         vis.DropdownMenu = new DropdownMenu(vis.parentElement, vis.data, vis.genres, vis.selectedGenres, vis.isInitialized, vis.wrangleData.bind(vis));
         vis.DropdownMenu.initVis();
+
+        // Track reset view button state
+        vis.resetViewVisible = false;
 
         vis.wrangleData();
 
@@ -49,6 +71,23 @@ class plotChart {
             vis.xScale.range([0, vis.width]);
             vis.xAxisGroup.attr("transform", `translate(0, ${vis.height})`);
 
+            // Update clip-path dimensions (maintain 7px bottom padding)
+            vis.svg.select("#chart-clip rect")
+                .attr("width", vis.width)
+                .attr("height", vis.height + 7);
+
+            // Update background rect dimensions
+            vis.chartArea.select(".chart-bg")
+                .attr("width", vis.width)
+                .attr("height", vis.height);
+
+            // Update zoom extents
+            if (vis.zoom) {
+                vis.zoom
+                    .translateExtent([[0, 0], [vis.width, vis.height]])
+                    .extent([[0, 0], [vis.width, vis.height]]);
+            }
+
             vis.updateVis();
         }
     }
@@ -74,8 +113,21 @@ class plotChart {
     initMainChart() {
         let vis = this;
 
-        vis.margin = { top: 20, right: 40, bottom: 60, left: 60 };
+        // Define color palette (color-blind friendly)
+        vis.highColor = "#d32f2f"; // Red for high ratings
+        vis.lowColor = "#005AB5";    // Blue for low ratings
 
+        vis.margin = { top: 10, right: 40, bottom: 50, left: 80 };
+
+        // Store original scales for zoom reset
+        vis.originalXDomain = null;
+        vis.originalYDomain = null;
+        vis.currentTransform = d3.zoomIdentity;
+
+        // Initialize zoom behavior (will be configured after dimensions are set)
+        vis.zoom = null;
+
+        // Get the actual dimensions of the container
         let container = document.getElementById("main-chart");
         let containerWidth = container ? container.getBoundingClientRect().width : 1400;
         let containerHeight = container ? container.getBoundingClientRect().height : 500;
@@ -83,26 +135,41 @@ class plotChart {
         vis.width = containerWidth - vis.margin.left - vis.margin.right;
         vis.height = Math.max(containerHeight - vis.margin.top - vis.margin.bottom, 390);
 
-        vis.svg = d3.select("#main-chart")
+        // Create main SVG with zoom area
+        vis.svgContainer = d3.select("#main-chart")
             .attr("width", vis.width + vis.margin.left + vis.margin.right)
             .attr("height", vis.height + vis.margin.top + vis.margin.bottom)
-            .append("g")
+            // Removed tabindex as requested - no tab navigation for main container
+            .attr("role", "application") // Indicate this handles its own keyboard navigation
+            .attr("aria-label", "Scatter plot of movie gross revenue. Use arrow keys to navigate between movies.");
+
+        vis.svg = vis.svgContainer.append("g")
             .attr("transform", `translate(${vis.margin.left}, ${vis.margin.top})`);
 
+        // Add clip path to prevent dots from showing outside chart area
+        // Add padding at bottom so dots on x-axis are fully visible (radius 5 + stroke)
+        vis.svg.append("defs").append("clipPath")
+            .attr("id", "chart-clip")
+            .append("rect")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", vis.width)
+            .attr("height", vis.height + 7)  // Extra 7px at bottom for full dot visibility
+
+        // Scales
         vis.xScale = d3.scaleLinear()
             .range([0, vis.width]);
 
-        vis.yScale = d3.scaleLinear()
-            .clamp(true);
+        vis.yScale = d3.scaleLinear();
 
-
-
+        // Color scale based on dynamic rating threshold
         vis.colorScale = d3.scaleThreshold()
-            .domain([8])
-            .range(["#ffb81eff", "#ff2919ff"]);
+            .domain([vis.ratingSplit])
+            .range([vis.lowColor, vis.highColor]);
 
         vis.xAxis = d3.axisBottom(vis.xScale)
-            .tickFormat(d3.format("d"));
+            .tickFormat(d3.format("d"))
+            .ticks(10);  // Suggest ~10 ticks, D3 will pick nice round numbers (every 10 years)
 
         vis.yAxis = d3.axisLeft(vis.yScale)
             .tickFormat(d => `$${d / 1000000}M`)
@@ -111,6 +178,7 @@ class plotChart {
             .tickPadding(8);
 
 
+        // Add axes FIRST so they appear behind everything
         vis.xAxisGroup = vis.svg.append("g")
             .attr("class", "axis x-axis")
             .attr("transform", `translate(0, ${vis.height})`);
@@ -118,11 +186,87 @@ class plotChart {
         vis.yAxisGroup = vis.svg.append("g")
             .attr("class", "axis y-axis");
 
+        // Create group for chart content AFTER axes so dots appear on top
+        vis.chartArea = vis.svg.append("g")
+            .attr("clip-path", "url(#chart-clip)");
+
+        // Add invisible background rect to capture click events
+        vis.chartArea.append("rect")
+            .attr("class", "chart-bg")
+            .attr("width", vis.width)
+            .attr("height", vis.height)
+            .attr("fill", "transparent")
+            .style("pointer-events", "all");
+
+        // Create groups for context-click feature (Explore mode only)
+        vis.contextLinesGroup = vis.chartArea.append("g")
+            .attr("class", "context-lines");
+
+        vis.contextAnnotationGroup = vis.chartArea.append("g")
+            .attr("class", "context-annotation");
+
+        // Add mouseleave handler to clear timeline pulse when mouse exits scatter area
+        // Dot highlights are cleared by the grace timer in mouseout handler
+        // Clear highlights when leaving chart area
+        vis.chartArea.on("mouseleave", function() {
+            vis.isHoveringDot = false;
+            if (vis.timeline && !vis.timeline.isLocked) {
+                // Clear timeline highlight
+                vis.timeline.highlightYearOnTimeline(null);
+                // Clear dot highlights
+                vis.chartArea.selectAll(".dot")
+                    .classed("is-highlighted", false)
+                    .classed("is-dimmed", false);
+                // Don't hide hairline - let timeline's own mouseleave handler manage it
+                vis.timeline.hoveredYear = null;
+            }
+        });
+
+        // Add click handler to SVG background to dismiss context-click
+        vis.svgContainer.on("click", function(event) {
+            // Only dismiss if clicking background (not a dot or other element)
+            if (event.target === this || event.target.tagName === 'svg' ||
+                (event.target.tagName === 'rect' && d3.select(event.target).classed('chart-bg'))) {
+                vis.clearContextClick();
+            }
+        });
+
+        // Keyboard navigation disabled since main container shouldn't be tabbable
+        // vis.svgContainer.on("keydown", function(event) {
+        //     vis.handleKeyboardNavigation(event);
+        // });
+
+        // // Track focus state
+        // vis.svgContainer.on("focus", function() {
+        //     vis.isContainerFocused = true;
+        // });
+
+        // // Clear active dot when container loses focus
+        // vis.svgContainer.on("blur", function() {
+        //     vis.isContainerFocused = false;
+        //     if (vis.activeDotIndex !== null) {
+        //         // Remove active styling and reset appearance to normal
+        //         vis.chartArea.selectAll(".dot")
+        //             .classed("is-active", false)
+        //             .classed("is-highlighted", false)
+        //             .classed("is-dimmed", false)
+        //             .attr("r", 5)
+        //             .style("stroke", "#ffffff")
+        //             .style("stroke-width", "1px");
+
+        //         vis.activeDotIndex = null;
+        //         // Clear timeline pulse
+        //         if (vis.timeline) {
+        //             vis.timeline.highlightYearOnTimeline(null);
+        //         }
+        //     }
+        // });
+
         // Axis labels
         vis.svg.append("text")
             .attr("class", "axis-label")
             .attr("x", vis.width / 2)
-            .attr("y", vis.height + 30)
+            .attr("y", vis.height + 40)
             .style("text-anchor", "middle")
             .style("font-size", "14px")
             .style("font-weight", "500")
@@ -131,77 +275,999 @@ class plotChart {
 
         vis.svg.append("text")
             .attr("class", "axis-label")
-            .attr("x", 15)
-            .attr("y", -8)
+            .attr("transform", "rotate(-90)")
+            .attr("x", -vis.height / 2)
+            .attr("y", -65)
             .style("text-anchor", "middle")
             .style("font-size", "14px")
             .style("font-weight", "500")
             .style("fill", "#cccccc")
             .text("Gross Revenue");
 
+
+        // Initialize zoom behavior now that dimensions are set
+        vis.zoom = d3.zoom()
+            .scaleExtent([1, 20]) // Allow zoom from 1x to 20x
+            .translateExtent([[0, 0], [vis.width, vis.height]]) // Constrain panning to chart boundaries
+            .extent([[0, 0], [vis.width, vis.height]]) // Set the viewport extent
+            .filter(function(event) {
+                // Exclude events from rating sliders or legend interactive elements
+                const target = event.target;
+                if (target.tagName === 'INPUT' ||
+                    target.closest('.rating-slider-legend') ||
+                    target.closest('foreignObject')) {
+                    return false;
+                }
+
+                // For wheel events, only allow with Ctrl/Cmd key to prevent accidental zoom
+                if (event.type === 'wheel') {
+                    return event.ctrlKey || event.metaKey;
+                }
+                // Allow all other events (drag for pan, touch, etc.)
+                return true;
+            })
+            .on("zoom", function(event) {
+                vis.zoomed(event);
+            });
+
+        // Apply zoom to the SVG container (not the group) to capture all events
+        vis.svgContainer.call(vis.zoom);
+
+        // Override double-click behavior to reset zoom instead of default zoom-in
+        vis.svgContainer.on("dblclick.zoom", null); // Remove default D3 double-click zoom
+        vis.svgContainer.on("dblclick", function() {
+            vis.resetZoom();
+        });
+
+        // ===== Add Interactive Color Legend (AFTER zoom area so it's on top) =====
+        // Legend position: top right of y-axis
         const legendSpacing = 28;
 
         const legendData = [
-            { color: "#ff2919ff", label: "High (≥8) IMDB Rating" },
-            { color: "#005AB5", label: "Low (<8) IMDB Rating" }
+            { id: "high", color: "#d32f2f", label: `High (≥${vis.ratingSplit.toFixed(1)})`, threshold: vis.ratingSplit },
+            { id: "low", color: "#005AB5", label: `Low (<${vis.ratingSplit.toFixed(1)})`, threshold: 0 }
         ];
 
         const legend = vis.svg.append("g")
             .attr("class", "legend")
-            .attr("transform", `translate(80,0)`);
+            .attr("transform", `translate(40,40)`);
 
-        legend.selectAll("circle")
+        // Add legend title
+        legend.append("text")
+            .attr("class", "legend-title")
+            .attr("x", -8)
+            .attr("y", -12)
+            .attr("fill", "#fff")
+            .attr("font-size", "14px")
+            .attr("font-weight", "600")
+            .text("IMDb Rating");
+
+        // Create clickable legend items
+        const legendItems = legend.selectAll(".legend-item")
             .data(legendData)
             .enter()
-            .append("circle")
+            .append("g")
+            .attr("class", "legend-item")
+            .attr("transform", (d, i) => `translate(0, ${i * legendSpacing + 8})`)
+            .style("cursor", "pointer")
+            .attr("tabindex", "0") // Make keyboard accessible in explore mode
+            .attr("role", "button")
+            .attr("aria-pressed", "true")
+            .attr("aria-label", d => `Toggle ${d.label} rating band`)
+            .on("click", function(event, d) {
+                vis.toggleRatingBand(d.id);
+            })
+            .on("keydown", function(event, d) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    vis.toggleRatingBand(d.id);
+                }
+            });
+
+        legendItems.append("circle")
+            .attr("class", "legend-symbol")
             .attr("cx", 0)
-            .attr("cy", (d, i) => i * legendSpacing)
+            .attr("cy", 0)
             .attr("r", 6)
             .attr("fill", d => d.color)
             .attr("stroke", "#fff")
             .attr("stroke-width", 1.5);
 
-        legend.selectAll("text")
-            .data(legendData)
-            .enter()
-            .append("text")
+        legendItems.append("text")
+            .attr("class", "legend-label")
             .attr("x", 12)
-            .attr("y", (d, i) => i * legendSpacing + 4)
-            .text(d => d.label);
+            .attr("y", 4)
+            .text(d => d.label)
+            .style("fill", "#ccc");
+
+        // Add count text for each legend item (positioned after label)
+        legendItems.append("text")
+            .attr("class", "legend-count")
+            .attr("x", 12)
+            .attr("y", 4)
+            .text(" · 0")
+            .style("fill", "#888")
+            .style("font-size", "11px");
+
+        // Add hover effects for better discoverability
+        legendItems
+            .on("mouseover", function(event, d) {
+                if (vis.visibleRatingBands.has(d.id)) {
+                    d3.select(this).select(".legend-label")
+                        .style("text-decoration", "underline")
+                        .style("fill", "#fff");
+                    d3.select(this).select(".legend-symbol")
+                        .attr("stroke-width", 2.5);
+                }
+            })
+            .on("mouseout", function(event, d) {
+                vis.updateLegendState(); // Reset to current state
+            });
+
+        // Add reset legend button - aligned with legend items
+        const resetLegendGroup = legend.append("g")
+            .attr("class", "reset-legend-btn")
+            .attr("transform", `translate(0, ${legendSpacing * 2})`)
+            .style("cursor", "pointer")
+            .attr("tabindex", "0")
+            .attr("role", "button")
+            .attr("aria-label", "Reset legend filters to default")
+            .on("click", function() {
+                vis.resetLegend();
+            })
+            .on("keydown", function(event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    vis.resetLegend();
+                }
+            });
+
+        // Add symbol aligned with legend circles (at x=0)
+        resetLegendGroup.append("text")
+            .attr("x", 0)
+            .attr("y", 8)
+            .text("↺")
+            .style("fill", "#888")
+            .style("font-size", "12px")
+            .style("font-weight", "500")
+            .style("text-anchor", "middle")
+            .on("mouseover", function() {
+                d3.select(this).style("fill", "#e50914");
+                d3.select(this.parentNode).select(".reset-label").style("fill", "#e50914");
+            })
+            .on("mouseout", function() {
+                d3.select(this).style("fill", "#888");
+                d3.select(this.parentNode).select(".reset-label").style("fill", "#888");
+            });
+
+        // Add text aligned with legend text (at x=12)
+        resetLegendGroup.append("text")
+            .attr("class", "reset-label")
+            .attr("x", 12)
+            .attr("y", 8)
+            .text("Reset legend")
+            .style("fill", "#888")
+            .style("font-size", "11px")
+            .style("font-weight", "500")
+            .on("mouseover", function() {
+                d3.select(this).style("fill", "#e50914");
+                d3.select(this.parentNode).select("text").style("fill", "#e50914");
+            })
+            .on("mouseout", function() {
+                d3.select(this).style("fill", "#888");
+                d3.select(this.parentNode).selectAll("text").style("fill", "#888");
+            });
+
+        // ===== Add Rating Split Threshold Control =====
+        const thresholdY = legendSpacing * 3 + 5;
+
+        // Add divider line
+        legend.append("line")
+            .attr("class", "legend-divider")
+            .attr("x1", -10)
+            .attr("x2", 150)
+            .attr("y1", thresholdY - 15)
+            .attr("y2", thresholdY - 15)
+            .style("stroke", "#444")
+            .style("stroke-width", 1);
+
+        // Threshold label
+        legend.append("text")
+            .attr("class", "threshold-label")
+            .attr("x", -8)
+            .attr("y", thresholdY + 5)
+            .style("fill", "#cccccc")
+            .style("font-size", "12px")
+            .style("font-weight", "500")
+            .text("Rating split");
+
+        // Live threshold display
+        legend.append("text")
+            .attr("id", "threshold-display")
+            .attr("x", -8)
+            .attr("y", thresholdY + 23)
+            .text(vis.ratingSplit.toFixed(1))
+            .style("fill", "#e50914")
+            .style("font-size", "11px")
+            .style("font-weight", "600");
+
+        // Threshold slider
+        const sliderY = thresholdY + 38;
+        const sliderFO = legend.append("foreignObject")
+            .attr("x", -8)
+            .attr("y", sliderY - 18)
+            .attr("width", 160)
+            .attr("height", 25)
+            .style("pointer-events", "all");
+
+        sliderFO.append("xhtml:input")
+            .attr("type", "range")
+            .attr("id", "rating-threshold-slider")
+            .attr("class", "rating-threshold-slider")
+            .attr("min", vis.ratingExtent[0] - 0.1)
+            .attr("max", vis.ratingExtent[1] + 0.1)
+            .attr("step", 0.1)
+            .attr("value", vis.ratingSplit)
+            .attr("aria-label", "Rating split threshold")
+            .attr("aria-valuemin", vis.ratingExtent[0] - 0.1)
+            .attr("aria-valuemax", vis.ratingExtent[1] + 0.1)
+            .attr("aria-valuenow", vis.ratingSplit)
+            .attr("aria-valuetext", `High if rating ≥ ${vis.ratingSplit.toFixed(1)}, Low otherwise`)
+            .style("width", "100%")
+            .style("pointer-events", "all");
+
+        // Add reset zoom button (initially hidden) - positioned after threshold slider
+        const resetViewY = sliderY + 30; // Position after slider with spacing
+        const resetZoomGroup = legend.append("g")
+            .attr("class", "reset-zoom-btn")
+            .attr("transform", `translate(0, ${resetViewY - 6})`)
+            .style("cursor", "pointer")
+            .style("opacity", 0)  // Start invisible
+            .style("pointer-events", "none")  // Disable clicks when invisible
+            .attr("tabindex", "-1")  // Start not tabbable (hidden)
+            .attr("role", "button")
+            .attr("aria-label", "Reset zoom and pan")
+            .on("click", function() {
+                this.blur(); // Remove focus to prevent visible focus effect after button fades out
+                vis.resetZoom();
+            })
+            .on("keydown", function(event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    this.blur(); // Remove focus to prevent visible focus effect after button fades out
+                    vis.resetZoom();
+                }
+            });
+
+        // Add symbol aligned with legend circles (at x=0)
+        resetZoomGroup.append("text")
+            .attr("x", 0)
+            .attr("y", 4)
+            .text("↺")
+            .style("fill", "#888")
+            .style("font-size", "12px")
+            .style("font-weight", "500")
+            .style("text-anchor", "middle")
+            .on("mouseover", function() {
+                d3.select(this).style("fill", "#e50914");
+                d3.select(this.parentNode).select(".reset-label").style("fill", "#e50914");
+            })
+            .on("mouseout", function() {
+                d3.select(this).style("fill", "#888");
+                d3.select(this.parentNode).select(".reset-label").style("fill", "#888");
+            });
+
+        // Add text aligned with legend text (at x=12)
+        resetZoomGroup.append("text")
+            .attr("class", "reset-label")
+            .attr("x", 12)
+            .attr("y", 4)
+            .text("Reset view")
+            .style("fill", "#888")
+            .style("font-size", "11px")
+            .style("font-weight", "500")
+            .on("mouseover", function() {
+                d3.select(this).style("fill", "#e50914");
+                d3.select(this.parentNode).select("text").style("fill", "#e50914");
+            })
+            .on("mouseout", function() {
+                d3.select(this).style("fill", "#888");
+                d3.select(this.parentNode).selectAll("text").style("fill", "#888");
+            });
+
+        // Store legend reference for later updates
+        vis.legend = legend;
+        vis.legendPadding = { top: 15, right: 18, bottom: 15, left: 15 };
+
+        // Add drop shadow filter (only once)
+        const defs = vis.svg.select("defs").empty()
+            ? vis.svg.append("defs")
+            : vis.svg.select("defs");
+
+        const filter = defs.append("filter")
+            .attr("id", "legend-shadow")
+            .attr("x", "-50%")
+            .attr("y", "-50%")
+            .attr("width", "200%")
+            .attr("height", "200%");
+
+        filter.append("feGaussianBlur")
+            .attr("in", "SourceAlpha")
+            .attr("stdDeviation", 4);
+
+        filter.append("feOffset")
+            .attr("dx", 0)
+            .attr("dy", 2)
+            .attr("result", "offsetblur");
+
+        filter.append("feComponentTransfer")
+            .append("feFuncA")
+            .attr("type", "linear")
+            .attr("slope", 0.3);
+
+        const feMerge = filter.append("feMerge");
+        feMerge.append("feMergeNode");
+        feMerge.append("feMergeNode")
+            .attr("in", "SourceGraphic");
+
+        // Create background group and initial background
+        const bgGroup = legend.insert("g", ":first-child")
+            .attr("class", "legend-bg-group");
+
+        bgGroup.append("rect")
+            .attr("class", "legend-background");
+
+        bgGroup.append("rect")
+            .attr("class", "legend-inner-border");
+
+        // Initial background update
+        vis.updateLegendBackground();
     }
 
+    // Update legend background size dynamically
+    updateLegendBackground() {
+        let vis = this;
 
+        // Temporarily hide background elements to get accurate content bbox
+        const bgGroup = vis.legend.select(".legend-bg-group");
+        const wasVisible = bgGroup.style("display") !== "none";
+        bgGroup.style("display", "none");
 
+        // Also temporarily hide reset view button if it's not visible
+        const resetViewBtn = vis.legend.select(".reset-zoom-btn");
+        const resetViewWasVisible = resetViewBtn.style("display") !== "none";
+        if (!vis.resetViewVisible) {
+            resetViewBtn.style("display", "none");
+        }
 
+        // Get bbox of content only (excluding background and hidden button)
+        const legendBBox = vis.legend.node().getBBox();
 
-    updateYearRange(yearRange) {
+        // Restore background visibility
+        if (wasVisible) {
+            bgGroup.style("display", null);
+        }
+
+        // Restore reset view button visibility
+        if (!vis.resetViewVisible && resetViewWasVisible) {
+            resetViewBtn.style("display", null);
+        }
+
+        const padding = vis.legendPadding;
+
+        // Update background rectangle with smooth transition
+        vis.legend.select(".legend-background")
+            .transition()
+            .duration(300)
+            .attr("x", legendBBox.x - padding.left)
+            .attr("y", legendBBox.y - padding.top)
+            .attr("width", legendBBox.width + padding.left + padding.right)
+            .attr("height", legendBBox.height + padding.top + padding.bottom)
+            .attr("rx", 8)
+            .attr("ry", 8)
+            .style("fill", "#121212")
+            .style("stroke", "rgba(255, 255, 255, 0.1)")
+            .style("stroke-width", 1.5)
+            .style("filter", "url(#legend-shadow)");
+
+        // Update inner border
+        vis.legend.select(".legend-inner-border")
+            .transition()
+            .duration(300)
+            .attr("x", legendBBox.x - padding.left + 1)
+            .attr("y", legendBBox.y - padding.top + 1)
+            .attr("width", legendBBox.width + padding.left + padding.right - 2)
+            .attr("height", legendBBox.height + padding.top + padding.bottom - 2)
+            .attr("rx", 7)
+            .attr("ry", 7)
+            .style("fill", "none")
+            .style("stroke", "rgba(255, 255, 255, 0.05)")
+            .style("stroke-width", 1);
+    }
+
+    
+    // Method to handle year range updates from Timeline
+    updateYearRange(yearRange, duration = 0) {
         let vis = this;
         vis.yearRange = yearRange;
+        // Only set transition flags when duration is explicitly provided
+        if (duration > 0) {
+            vis.useTransition = true;
+            vis.transitionDuration = duration;
+        } else {
+            // Explicitly clear transition flags for normal brush operations
+            vis.useTransition = false;
+            vis.transitionDuration = 0;
+        }
         vis.wrangleData();
     }
 
-    wrangleData() {
+    // Method to set timeline reference (for bidirectional highlight)
+    setTimeline(timeline) {
+        let vis = this;
+        vis.timeline = timeline;
+    }
+
+    // Method to handle rating split threshold updates
+    updateRatingSplit(threshold) {
+        let vis = this;
+        vis.ratingSplit = threshold;
+
+        // Update color scale domain
+        vis.colorScale.domain([vis.ratingSplit]);
+
+        // Update legend labels to reflect new threshold
+        vis.updateLegendLabels();
+
+        // Re-wrangle data to re-bin movies
+        vis.wrangleData();
+    }
+
+    // Method to highlight scatter points by year (bidirectional highlight: timeline → scatter)
+    highlightYear(year) {
         let vis = this;
 
-        if (vis.selectedGenres.size === 0) {
-            vis.displayData = [];
+        // Don't apply highlight classes if spotlight is active
+        if (vis.spotlightActive) {
+            return;
+        }
+
+        vis.chartArea.selectAll(".dot")
+            .classed("is-highlighted", d => year !== null && d.Released_Year === year)
+            .classed("is-dimmed", d => year !== null && d.Released_Year !== year);
+    }
+
+    // Zoom event handler
+    zoomed(event) {
+        let vis = this;
+
+        vis.currentTransform = event.transform;
+
+        // Show reset view button when zoomed (not at identity)
+        const shouldShowResetView = (event.transform.k !== 1 || event.transform.x !== 0 || event.transform.y !== 0);
+
+        // Only update if state changed
+        if (shouldShowResetView !== vis.resetViewVisible) {
+            vis.resetViewVisible = shouldShowResetView;
+
+            if (shouldShowResetView) {
+                vis.svg.select(".reset-zoom-btn")
+                    .attr("tabindex", "-1") // Never tabbable as requested
+                    .transition()
+                    .duration(300)
+                    .style("opacity", 1)
+                    .style("pointer-events", "all");
+            } else {
+                vis.svg.select(".reset-zoom-btn")
+                    .attr("tabindex", "-1") // Remove from tab order when hidden
+                    .transition()
+                    .duration(300)
+                    .style("opacity", 0)
+                    .style("pointer-events", "none");
+            }
+
+            // Update legend background only when state changes
+            setTimeout(() => vis.updateLegendBackground(), 50);
+        }
+
+        // Create new scales based on zoom transform
+        const newXScale = event.transform.rescaleX(vis.xScale);
+        const newYScale = event.transform.rescaleY(vis.yScale);
+
+        // During zoom, use automatic tick generation for y-axis to prevent clustering
+        // Clear any custom tick values set by the compressed scale
+        const yAxisForZoom = d3.axisLeft(newYScale)
+            .tickFormat(d => `$${(d / 1000000).toFixed(0)}M`)
+            .tickSizeOuter(0)
+            .tickSizeInner(6)
+            .tickPadding(8)
+            .ticks(8); // Use automatic tick generation with ~8 ticks
+
+        // Update axes with new scales
+        vis.xAxisGroup.call(vis.xAxis.scale(newXScale));
+        vis.yAxisGroup.call(yAxisForZoom);
+
+        // Update dots positions with new scales
+        vis.chartArea.selectAll(".dot")
+            .attr("cx", d => newXScale(d.Released_Year))
+            .attr("cy", d => newYScale(d.Gross));
+
+        // Update spotlight halo position if active
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            const targetMovie = vis.featuredMovies[vis.spotlightActive];
+            const newCx = newXScale(targetMovie.Released_Year);
+            const newCy = newYScale(targetMovie.Gross);
+
+            vis.chartArea.selectAll(".spotlight-halo-group circle")
+                .attr("cx", newCx)
+                .attr("cy", newCy);
+        }
+
+        // Update annotations with zoom
+        vis.updateAnnotationsWithZoom(newXScale, newYScale);
+
+        // Update context-click elements if active
+        if (vis.contextClickActive && vis.contextClickedMovie) {
+            // Update reference lines with new scales
+            const peerStats = vis.calculatePeerAverages(vis.contextClickedMovie);
+
+            vis.contextLinesGroup.select(".context-line-horizontal")
+                .attr("y1", newYScale(peerStats.avgGross))
+                .attr("y2", newYScale(peerStats.avgGross));
+
+            vis.contextLinesGroup.select(".context-line-vertical")
+                .attr("x1", newXScale(peerStats.avgYear))
+                .attr("x2", newXScale(peerStats.avgYear));
+
+            // Update line labels
+            vis.contextLinesGroup.selectAll(".context-line-label").each(function(d, i) {
+                const label = d3.select(this);
+                if (label.classed("context-line-label") && label.text() === "Avg Gross") {
+                    // Horizontal line label
+                    label.attr("y", newYScale(peerStats.avgGross) - 2);
+                } else if (label.classed("context-line-label") && label.text() === "Avg Year") {
+                    // Vertical line label
+                    label.attr("x", newXScale(peerStats.avgYear) + 5)
+                         .attr("y", 18);
+                }
+            });
+
+            // Update label backgrounds
+            vis.contextLinesGroup.selectAll(".context-line-label-bg").each(function(d, i) {
+                const bg = d3.select(this);
+                if (i === 0) { // Horizontal line label background
+                    bg.attr("y", newYScale(peerStats.avgGross) - 15);
+                } else { // Vertical line label background
+                    bg.attr("x", newXScale(peerStats.avgYear) - 25)
+                       .attr("y", 5);
+                }
+            });
+
+            // Update context annotation position
+            const dotX = newXScale(vis.contextClickedMovie.Released_Year);
+            const dotY = newYScale(vis.contextClickedMovie.Gross);
+
+            // Get annotation dimensions from stored datum
+            const annotationBox = vis.contextAnnotationGroup.select(".context-annotation-box");
+            const annotationData = annotationBox.datum();
+            const annotationWidth = annotationData ? annotationData.width : 250;
+            const annotationHeight = annotationData ? annotationData.height : 100;
+
+            // Recalculate annotation position (same logic as showContextClick)
+            let annotationX = dotX + 15;
+            let annotationY = dotY - 50;
+
+            // Keep annotation within chart bounds
+            if (annotationX + annotationWidth > vis.width) {
+                annotationX = dotX - annotationWidth - 15;
+            }
+            if (annotationY < 0) {
+                annotationY = dotY + 15;
+            }
+            if (annotationY + annotationHeight > vis.height) {
+                annotationY = vis.height - annotationHeight - 10;
+            }
+
+            annotationBox.attr("transform", `translate(${annotationX}, ${annotationY})`);
+        }
+    }
+
+    // Reset zoom to original view
+    resetZoom() {
+        let vis = this;
+
+        vis.currentTransform = d3.zoomIdentity;
+
+        // Reset axes to use original scales (not transformed scales)
+        vis.xAxis.scale(vis.xScale);
+        vis.yAxis.scale(vis.yScale);
+
+        // Apply the reset with a smooth transition
+        vis.svgContainer.transition()
+            .duration(750)
+            .call(vis.zoom.transform, d3.zoomIdentity)
+            .on("end", function() {
+                // After zoom reset completes, redraw chart
+                vis.updateVis();
+
+                // Hide reset view button after reset completes with transition
+                vis.svg.select(".reset-zoom-btn")
+                    .attr("tabindex", "-1") // Remove from tab order when hidden
+                    .transition()
+                    .duration(300)
+                    .style("opacity", 0)
+                    .style("pointer-events", "none");
+                vis.resetViewVisible = false;
+
+                // Update legend background after hiding reset view button
+                setTimeout(() => vis.updateLegendBackground(), 50);
+            });
+    }
+
+    // Update annotations during zoom
+    updateAnnotationsWithZoom(xScale, yScale) {
+        let vis = this;
+
+        // Ensure annotation group exists and has correct opacity
+        vis.svg.selectAll(".annotation-group").style("opacity", 1);
+
+        // Re-position annotation lines and labels based on new scales
+        vis.svg.selectAll(".annotation-line")
+            .each(function(d) {
+                if (d) {
+                    const x = xScale(d.Released_Year);
+                    const y = yScale(d.Gross);
+                    d3.select(this)
+                        .attr("x1", x)
+                        .attr("x2", x)
+                        .attr("y1", d.annotateAbove ? y - 6 : y + 6)  // Use 6px (5px radius + 1px stroke)
+                        .attr("y2", d.annotateAbove ? y - 50 : y + 50);
+                }
+            });
+
+        vis.svg.selectAll(".annotation-label")
+            .each(function(d) {
+                if (d) {
+                    const x = xScale(d.Released_Year);
+                    const y = yScale(d.Gross);
+
+                    // During zoom, keep label centered on the dot's x position
+                    // Only apply edge anchoring when the label would actually go off screen
+                    let labelX = x;
+                    const labelNode = this;
+                    const bbox = labelNode.getBBox();
+                    const labelWidth = bbox.width;
+
+                    // Only adjust if label would actually go off screen
+                    if (d.textAnchor === "start" && x - labelWidth/2 < 5) {
+                        labelX = 5;
+                        d3.select(this).style("text-anchor", "start");
+                    } else if (d.textAnchor === "end" && x + labelWidth/2 > vis.width - 5) {
+                        labelX = vis.width - 5;
+                        d3.select(this).style("text-anchor", "end");
+                    } else {
+                        // Center the label on the dot
+                        d3.select(this).style("text-anchor", "middle");
+                    }
+
+                    d3.select(this)
+                        .attr("x", labelX)
+                        .attr("y", d.annotateAbove ? y - 55 : y + 65);
+                }
+            });
+
+        // Update annotation backgrounds - match each background to its specific label
+        // Update first annotation background (now in chartArea)
+        const bg1 = vis.chartArea.select(".annotation-bg-1");
+        const label1 = vis.chartArea.select(".annotation-label");
+        if (!bg1.empty() && !label1.empty() && label1.node()) {
+            const labelBBox1 = label1.node().getBBox();
+            bg1.attr("x", labelBBox1.x - 3)
+                .attr("y", labelBBox1.y - 1)
+                .attr("width", labelBBox1.width + 6)
+                .attr("height", labelBBox1.height + 2)
+                .style("opacity", 0.85);
+        }
+
+        // Update second annotation background (now in chartArea)
+        const bg2 = vis.chartArea.select(".annotation-bg-2");
+        const label2 = vis.chartArea.select(".annotation-label-2");
+        if (!bg2.empty() && !label2.empty() && label2.node()) {
+            const labelBBox2 = label2.node().getBBox();
+            bg2.attr("x", labelBBox2.x - 3)
+                .attr("y", labelBBox2.y - 1)
+                .attr("width", labelBBox2.width + 6)
+                .attr("height", labelBBox2.height + 2)
+                .style("opacity", 0.85);
+        }
+
+        // Update third annotation background (underrated gem - now in chartArea)
+        const bg3 = vis.chartArea.select(".annotation-bg-3");
+        const label3 = vis.chartArea.select(".annotation-label-3");
+        if (!bg3.empty() && !label3.empty() && label3.node()) {
+            const labelBBox3 = label3.node().getBBox();
+            bg3.attr("x", labelBBox3.x - 3)
+                .attr("y", labelBBox3.y - 1)
+                .attr("width", labelBBox3.width + 6)
+                .attr("height", labelBBox3.height + 2)
+                .style("opacity", 0.85);
+        }
+    }
+
+    // Method to toggle rating band visibility
+    toggleRatingBand(bandId) {
+        let vis = this;
+
+        if (vis.visibleRatingBands.has(bandId)) {
+            vis.visibleRatingBands.delete(bandId);
         } else {
-            vis.displayData = vis.data.filter(d => {
+            vis.visibleRatingBands.add(bandId);
+        }
+
+        // Update legend visual state
+        vis.updateLegendState();
+
+        // Refresh visualization with smooth transition
+        vis.wrangleData();
+    }
+
+    // Method to reset legend filters and threshold
+    resetLegend() {
+        let vis = this;
+
+        // Reset visibility: turn both bands ON
+        vis.visibleRatingBands.clear();
+        vis.visibleRatingBands.add('high');
+        vis.visibleRatingBands.add('low');
+
+        // Reset threshold to default 8.0 (clamped to data extent)
+        const defaultThreshold = 8.0;
+        vis.ratingSplit = Math.max(vis.ratingExtent[0], Math.min(defaultThreshold, vis.ratingExtent[1]));
+
+        // Update color scale domain with new threshold
+        vis.colorScale.domain([vis.ratingSplit]);
+
+        // Update threshold slider
+        d3.select("#rating-threshold-slider").property("value", vis.ratingSplit);
+
+        // Update legend labels and visual state
+        vis.updateLegendLabels();
+        vis.updateLegendState();
+
+        // Refresh visualization
+        vis.wrangleData();
+    }
+
+    // Method to update legend labels based on current threshold
+    updateLegendLabels() {
+        let vis = this;
+
+        // Update legend item labels
+        vis.svg.selectAll(".legend-item").each(function(d) {
+            const newLabel = d.id === 'high'
+                ? `High (≥${vis.ratingSplit.toFixed(1)})`
+                : `Low (<${vis.ratingSplit.toFixed(1)})`;
+
+            d3.select(this).select(".legend-label").text(newLabel);
+        });
+
+        // Update threshold display
+        d3.select("#threshold-display").text(vis.ratingSplit.toFixed(1));
+
+        // Update slider ARIA
+        d3.select("#rating-threshold-slider")
+            .attr("aria-valuenow", vis.ratingSplit)
+            .attr("aria-valuetext", `High if rating ≥ ${vis.ratingSplit.toFixed(1)}, Low otherwise`);
+    }
+
+    // Show empty state overlay with context-aware message
+    showEmptyStateOverlay() {
+        let vis = this;
+
+        // Remove existing overlay if present
+        d3.select("#empty-state-overlay").remove();
+
+        // Detect the reason for empty state
+        let message1, message2, resetAction;
+
+        if (vis.selectedGenres.size === 0) {
+            // No genres selected
+            message1 = "No genres selected.";
+            message2 = 'Select genres from the dropdown or <span class="reset-link">reset all filters</span>.';
+            resetAction = () => {
+                // Reset all filters (same as Reset All button)
+                vis.selectedGenres.clear();
+                vis.genres.forEach(genre => vis.selectedGenres.add(genre));
+                d3.select("#select-all").property("checked", true);
+                d3.selectAll("#genre-dropdown input[type='checkbox']").property("checked", true);
+                d3.select("#dropdown-text").text("All Genres");
+                vis.wrangleData();
+            };
+        } else if (vis.visibleRatingBands.size === 0) {
+            // No rating bands visible (both hidden)
+            message1 = "No rating bands are visible.";
+            message2 = 'Turn a band on in the legend or <span class="reset-link">reset legend</span>.';
+            resetAction = () => vis.resetLegend();
+        } else {
+            // Other cases (e.g., year range filter, or slider at extreme with only band hidden)
+            message1 = "No movies match the current filters.";
+            message2 = 'Adjust filters or <span class="reset-link">reset all</span>.';
+            resetAction = () => {
+                // Full reset (same as Reset All button in main.js)
+                vis.selectedGenres.clear();
+                vis.genres.forEach(genre => vis.selectedGenres.add(genre));
+                d3.select("#select-all").property("checked", true);
+                d3.selectAll("#genre-dropdown input[type='checkbox']").property("checked", true);
+                d3.select("#dropdown-text").text("All Genres");
+                vis.resetLegend();
+                // Note: Can't reset timeline from here without reference to myTimeline
+            };
+        }
+
+        // Create overlay
+        const overlay = d3.select(".main-chart-section")
+            .append("div")
+            .attr("id", "empty-state-overlay")
+            .attr("class", "empty-state-overlay")
+            .style("opacity", 0);
+
+        overlay.append("p")
+            .text(message1);
+
+        overlay.append("p")
+            .html(message2)
+            .select(".reset-link")
+            .on("click", resetAction);
+
+        // Fade in
+        overlay.transition()
+            .duration(300)
+            .style("opacity", 1);
+    }
+
+    // Hide empty state overlay
+    hideEmptyStateOverlay() {
+        d3.select("#empty-state-overlay")
+            .transition()
+            .duration(200)
+            .style("opacity", 0)
+            .remove();
+    }
+
+    // Update legend visual state based on active filters
+    updateLegendState() {
+        let vis = this;
+
+        vis.svg.selectAll(".legend-item")
+            .each(function(d) {
+                const isActive = vis.visibleRatingBands.has(d.id);
+
+                d3.select(this)
+                    .attr("aria-pressed", isActive)
+                    .select(".legend-symbol")
+                    .transition()
+                    .duration(200)
+                    .attr("fill", isActive ? d.color : "#333")
+                    .attr("opacity", isActive ? 1 : 0.3);
+
+                d3.select(this)
+                    .select(".legend-label")
+                    .transition()
+                    .duration(200)
+                    .style("fill", isActive ? "#ccc" : "#666")
+                    .style("text-decoration", isActive ? "none" : "line-through");
+            });
+    }
+
+    // Calculate and update per-band counts in legend
+    updateLegendCounts() {
+        let vis = this;
+
+        // Calculate counts for data BEFORE legend visibility filter
+        // Pipeline: year range → genre → re-bin by threshold, then count
+        let dataBeforeLegend = vis.data.slice();
+
+        // Apply year range filter
+        if (vis.yearRange) {
+            dataBeforeLegend = dataBeforeLegend.filter(d =>
+                d.Released_Year >= vis.yearRange[0] && d.Released_Year <= vis.yearRange[1]
+            );
+        }
+
+        // Apply genre filter
+        if (vis.selectedGenres.size === 0) {
+            dataBeforeLegend = [];
+        } else {
+            dataBeforeLegend = dataBeforeLegend.filter(d => {
                 if (!d.Genre) return false;
                 let movieGenres = d.Genre.split(',').map(g => g.trim());
                 return movieGenres.some(genre => vis.selectedGenres.has(genre));
             });
         }
 
+        // Re-bin by current threshold
+        dataBeforeLegend.forEach(d => {
+            d.ratingBand = d.IMDB_Rating >= vis.ratingSplit ? 'high' : 'low';
+        });
+
+        // Count movies per band
+        const bandCounts = {
+            high: dataBeforeLegend.filter(d => d.ratingBand === 'high').length,
+            low: dataBeforeLegend.filter(d => d.ratingBand === 'low').length
+        };
+
+        // Update legend item counts and ghost state
+        vis.svg.selectAll(".legend-item")
+            .each(function(d) {
+                const count = bandCounts[d.id] || 0;
+                const countText = count === 1 ? "1 movie" : `${count} movies`;
+
+                // Get label width to position count after it
+                const labelElement = d3.select(this).select(".legend-label");
+                const labelWidth = labelElement.node().getBBox().width;
+
+                // Update count text - use middot separator, positioned after label
+                d3.select(this).select(".legend-count")
+                    .attr("x", 12 + labelWidth + 5)
+                    .text(` · ${count}`);
+
+                // Apply ghosted state if count is 0
+                if (count === 0) {
+                    d3.select(this).classed("ghosted", true);
+                    d3.select(this).style("pointer-events", "none");
+                } else {
+                    d3.select(this).classed("ghosted", false);
+                    d3.select(this).style("pointer-events", "all");
+                }
+            });
+    }
+
+    wrangleData() {
+        let vis = this;
+
+        // Reset keyboard navigation state when data changes
+        if (vis.activeDotIndex !== null) {
+            vis.activeDotIndex = null;
+            // Clear active styling will happen during updateVis when dots are redrawn
+        }
+
+        // Start with all data
+        vis.displayData = vis.data.slice();
+
+        // Filter pipeline: timeline brush → genre → re-bin by threshold → legend visibility
+
+        // 1. Filter by year range if brush is active
         if (vis.yearRange) {
             vis.displayData = vis.displayData.filter(d =>
                 d.Released_Year >= vis.yearRange[0] && d.Released_Year <= vis.yearRange[1]
             );
         }
 
+        // 2. Filter by genre
+        if (vis.selectedGenres.size === 0) {
+            vis.displayData = [];
+        } else {
+            vis.displayData = vis.displayData.filter(d => {
+                if (!d.Genre) return false;
+                let movieGenres = d.Genre.split(',').map(g => g.trim());
+                return movieGenres.some(genre => vis.selectedGenres.has(genre));
+            });
+        }
+
+        // 3. Re-bin by rating threshold (does NOT drop data, just assigns band)
+        vis.displayData.forEach(d => {
+            d.ratingBand = d.IMDB_Rating >= vis.ratingSplit ? 'high' : 'low';
+        });
+
+        // 4. Filter by rating band visibility (legend toggles)
+        vis.displayData = vis.displayData.filter(d => vis.visibleRatingBands.has(d.ratingBand));
+
         vis.isInitialized = true;
 
         vis.displayData.sort((a, b) => a.IMDB_Rating - b.IMDB_Rating);
+
+        // Update legend counts before updating statistics
+        vis.updateLegendCounts();
 
         vis.updateStatistics();
 
@@ -233,6 +1299,12 @@ class plotChart {
 
         if (vis.displayData.length === 0) {
             d3.select("#featured-movies").style("display", "none");
+            // Clear featured movie references
+            vis.featuredMovies = {
+                highestGrossing: null,
+                highestRated: null,
+                hiddenGem: null
+            };
             return;
         }
 
@@ -255,8 +1327,9 @@ class plotChart {
         let medianGross = d3.median(vis.displayData, d => d.Gross);
         let hiddenGems = vis.displayData.filter(d => d.Gross < medianGross);
 
+        let hiddenGem = null;
         if (hiddenGems.length > 0) {
-            let hiddenGem = hiddenGems.reduce((max, d) =>
+            hiddenGem = hiddenGems.reduce((max, d) =>
                 d.IMDB_Rating > max.IMDB_Rating ? d : max
             );
 
@@ -266,15 +1339,55 @@ class plotChart {
             d3.select("#hidden-gem-title").text("N/A");
             d3.select("#hidden-gem-value").text("Not enough data");
         }
+
+        // Store references to featured movies for spotlight feature
+        vis.featuredMovies = {
+            highestGrossing: highestGrossing,
+            highestRated: highestRated,
+            hiddenGem: hiddenGem
+        };
+
+        // Check if current spotlight target is still the same movie
+        // If not, clear the spotlight (featured movie has changed due to filtering)
+        if (vis.spotlightActive) {
+            const currentSpotlightMovie = vis.featuredMovies[vis.spotlightActive];
+            const previousSpotlightMovie = vis.previousSpotlightMovie;
+
+            // If the featured movie for this category has changed, clear spotlight
+            if (!currentSpotlightMovie ||
+                !previousSpotlightMovie ||
+                currentSpotlightMovie.Series_Title !== previousSpotlightMovie.Series_Title) {
+                vis.clearSpotlight(false); // Clear without animation
+            }
+        }
+
+        // Store current featured movie for next comparison
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            vis.previousSpotlightMovie = vis.featuredMovies[vis.spotlightActive];
+        }
+
+        // Set up click handlers for featured cards (only once)
+        if (!vis.featuredCardsInitialized) {
+            vis.initializeFeaturedCardHandlers();
+            vis.featuredCardsInitialized = true;
+        }
     }
 
     updateVis() {
         let vis = this;
 
         if (vis.displayData.length === 0) {
-            vis.svg.selectAll(".dot").remove();
+            vis.chartArea.selectAll(".dot").remove();
+            vis.svg.selectAll(".annotation-group").remove(); // Clear annotations when no data
+
+            // Show empty state overlay whenever no data is visible
+            // (both bands hidden manually OR slider at extreme with only populated band hidden)
+            vis.showEmptyStateOverlay();
             return;
         }
+
+        // Hide empty state overlay when data is present
+        vis.hideEmptyStateOverlay();
 
         if (vis.yearRange) {
             vis.xScale.domain([
@@ -283,65 +1396,57 @@ class plotChart {
             ]);
         } else {
             vis.xScale.domain([
-                d3.min(vis.data, d => d.Released_Year) - 2,
-                d3.max(vis.data, d => d.Released_Year) + 2
+                d3.min(vis.data, d => d.Released_Year) - 1,
+                d3.max(vis.data, d => d.Released_Year) + 1
             ]);
         }
 
+        // Simple linear y-scale
         const grossMax = d3.max(vis.data, d => d.Gross) || 0;
         const million = 1000000;
-        const needsCompressedScale = grossMax > vis.yBreakDetailed;
+        const paddedMax = grossMax === 0
+            ? 100 * million
+            : Math.ceil(((grossMax * 1.05) / million) / 25) * 25 * million;
 
-        if (needsCompressedScale) {
-            const grossMaxMillions = Math.ceil((grossMax / million) / 100) * 100;
-            const upperBound = Math.max(vis.yUpperBoundBase, grossMaxMillions * million);
-            const transitionY = vis.height * (1 - vis.yDetailRatio);
+        vis.yScale
+            .domain([0, paddedMax])
+            .range([vis.height, 0]);
 
-            vis.yScale
-                .domain([0, vis.yBreakDetailed, upperBound])
-                .range([vis.height, transitionY, 0]);
+        vis.yAxis.tickValues(null);
 
-            const lowerTicks = d3.range(0, vis.yBreakDetailed + 1, 100 * million);
-            const upperTicks = d3.range(vis.yBreakDetailed + 100 * million, upperBound + 1, 100 * million);
-
-            const tickValues = Array.from(new Set([...lowerTicks, ...upperTicks])).sort((a, b) => a - b);
-
-            vis.yAxis.tickValues(tickValues);
+        // Update axes (apply zoom transform if exists)
+        if (vis.currentTransform && (
+            vis.currentTransform.k !== 1 ||
+            vis.currentTransform.x !== 0 ||
+            vis.currentTransform.y !== 0
+        )) {
+            const newXScale = vis.currentTransform.rescaleX(vis.xScale);
+            const newYScale = vis.currentTransform.rescaleY(vis.yScale);
+            vis.xAxisGroup.call(vis.xAxis.scale(newXScale));
+            vis.yAxisGroup.call(vis.yAxis.scale(newYScale));
         } else {
-            const paddedMax = grossMax === 0
-                ? vis.yBreakDetailed
-                : Math.ceil(((grossMax * 1.05) / million) / 25) * 25 * million;
-
-            vis.yScale
-                .domain([0, paddedMax])
-                .range([vis.height, 0]);
-
-            vis.yAxis.tickValues(null);
+            // Apply transition if flagged (for story mode)
+            if (vis.useTransition) {
+                vis.xAxisGroup.transition()
+                    .duration(vis.transitionDuration || 750)
+                    .call(vis.xAxis.scale(vis.xScale));  // Explicitly set scale
+                vis.yAxisGroup.transition()
+                    .duration(vis.transitionDuration || 750)
+                    .call(vis.yAxis.scale(vis.yScale));  // Explicitly set scale
+                // Clear transition flags after use
+                vis.useTransition = false;
+                vis.transitionDuration = 0;
+            } else {
+                // Normal update without transition
+                // IMPORTANT: Always explicitly set the scale to ensure it's not using a stale transformed scale
+                vis.xAxisGroup.call(vis.xAxis.scale(vis.xScale));
+                vis.yAxisGroup.call(vis.yAxis.scale(vis.yScale));
+            }
         }
 
-        vis.xAxisGroup.call(vis.xAxis);
-        vis.yAxisGroup.call(vis.yAxis);
 
-        vis.yAxisGroup.selectAll(".axis-break").remove();
-
-        if (needsCompressedScale) {
-            const breakY = vis.yScale(vis.yBreakDetailed);
-            const breakWidth = 10;
-            const breakHeight = 12;
-
-            const breakPath = d3.path();
-            breakPath.moveTo(0, breakY - breakHeight / 2);
-            breakPath.lineTo(-breakWidth, breakY - breakHeight / 4);
-            breakPath.lineTo(0, breakY);
-            breakPath.lineTo(-breakWidth, breakY + breakHeight / 4);
-            breakPath.lineTo(0, breakY + breakHeight / 2);
-
-            vis.yAxisGroup.append("path")
-                .attr("class", "axis-break")
-                .attr("d", breakPath.toString());
-        }
-
-        let circles = vis.svg.selectAll(".dot")
+        // Bind data to circles (use chartArea for clipping)
+        let circles = vis.chartArea.selectAll(".dot")
             .data(vis.displayData, d => d.Series_Title);
 
         circles.exit()
@@ -358,11 +1463,54 @@ class plotChart {
             .attr("cy", d => vis.yScale(d.Gross))
             .attr("r", 5)
             .attr("fill", d => vis.colorScale(d.IMDB_Rating))
-            .attr("opacity", 0);
+            // Let CSS handle stroke styling
+            .attr("opacity", 0) // Start at 0 for fade-in effect
+            // No tabindex - using roving tabindex pattern on container
+            .attr("role", "button")
+            .attr("aria-label", d => `${d.Series_Title}, ${d.Released_Year}, $${(d.Gross / 1000000).toFixed(1)}M gross, ${d.IMDB_Rating}/10 rating`);
 
         // Merge and update - interrupt ongoing transitions before updating
-        enterCircles.merge(circles)
+        const mergedCircles = enterCircles.merge(circles);
+
+        // Apply current zoom transform if it exists (even when not in zoom mode)
+        if (vis.currentTransform && (
+            vis.currentTransform.k !== 1 ||
+            vis.currentTransform.x !== 0 ||
+            vis.currentTransform.y !== 0
+        )) {
+            const newXScale = vis.currentTransform.rescaleX(vis.xScale);
+            const newYScale = vis.currentTransform.rescaleY(vis.yScale);
+            mergedCircles
+                .attr("cx", d => newXScale(d.Released_Year))
+                .attr("cy", d => newYScale(d.Gross));
+        }
+
+        mergedCircles
             .on("mouseover", function (event, d) {
+                // Don't skip tooltip or cross-view hover even in story mode - user wants it always visible
+                // Mark that we're currently hovering over a dot
+                vis.isHoveringDot = true;
+
+                // ALWAYS cancel grace timer when hovering over ANY dot
+                if (vis.timeline && vis.timeline.graceTimer) {
+                    clearTimeout(vis.timeline.graceTimer);
+                    vis.timeline.graceTimer = null;
+                }
+
+                // Clear keyboard navigation active dot when mouse interaction begins
+                if (vis.activeDotIndex !== null) {
+                    vis.chartArea.selectAll(".dot").classed("is-active", false);
+                    vis.activeDotIndex = null;
+                }
+
+                // Bidirectional highlight: notify timeline of hovered year AND highlight same-year dots
+                // Keep this enabled even in story mode for cross-view hover per user request
+                if (vis.timeline) {
+                    vis.timeline.highlightYearOnTimeline(d.Released_Year);
+                }
+                // Highlight all dots from the same year (consistent with timeline hover behavior)
+                vis.highlightYear(d.Released_Year);
+
                 // Build tooltip content with enhanced metadata
                 let tooltipContent = `
                     <div class="tooltip-content">
@@ -389,7 +1537,7 @@ class plotChart {
                         <div class="movie-poster">
                             <img src="${d.Poster_Link}"
                                  alt="${d.Series_Title} Poster"
-                                 onerror="this.style.display='none'"
+                                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22%3E%3Crect width=%22100%22 height=%22150%22 fill=%22%23333%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2212%22 font-family=%22Arial%22%3ENo Poster%3C/text%3E%3C/svg%3E'; this.onerror=null;"
                                  class="poster-image">
                         </div>
                     </div>`;
@@ -400,74 +1548,372 @@ class plotChart {
                     .classed("visible", true)
                     .html(tooltipContent);
 
-                // Smart positioning to keep tooltip within viewport
-                const tooltipNode = tooltip.node();
-                const tooltipRect = tooltipNode.getBoundingClientRect();
-                const viewportWidth = window.innerWidth;
-                const viewportHeight = window.innerHeight;
+                // Use requestAnimationFrame to ensure highlights are painted before positioning tooltip
+                requestAnimationFrame(() => {
+                    // Smart positioning to keep tooltip within viewport, avoid timeline AND highlighted dots
+                    const tooltipNode = tooltip.node();
+                    const tooltipRect = tooltipNode.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
 
-                let left = event.pageX + 15;
-                let top = event.pageY - 28;
+                    // Get timeline position to avoid covering it
+                    const timelineElement = document.getElementById('slider-chart');
+                    const timelineRect = timelineElement ? timelineElement.getBoundingClientRect() : null;
 
-                // Adjust horizontal position if tooltip would go off screen
-                if (left + tooltipRect.width > viewportWidth) {
-                    left = event.pageX - tooltipRect.width - 15;
-                }
+                    // Get positions of highlighted dots AND the hovered dot to avoid covering them
+                    const dotsToAvoid = [];
 
-                // Adjust vertical position if tooltip would go off screen
-                if (top < 0) {
-                    top = event.pageY + 15;
-                }
-                if (top + tooltipRect.height > viewportHeight) {
-                    top = viewportHeight - tooltipRect.height - 15;
-                }
+                    // Add all highlighted dots
+                    vis.chartArea.selectAll(".dot.is-highlighted").each(function() {
+                        const rect = this.getBoundingClientRect();
+                        dotsToAvoid.push({
+                            left: rect.left,
+                            right: rect.right,
+                            top: rect.top,
+                            bottom: rect.bottom,
+                            centerX: rect.left + rect.width / 2,
+                            centerY: rect.top + rect.height / 2
+                        });
+                    });
 
-                tooltip
-                    .style("left", left + "px")
-                    .style("top", top + "px");
+
+                    // Also add the currently hovered dot (with larger bounds since it's enlarged)
+                    const hoveredDotRect = this.getBoundingClientRect();
+                    dotsToAvoid.push({
+                        left: hoveredDotRect.left,
+                        right: hoveredDotRect.right,
+                        top: hoveredDotRect.top,
+                        bottom: hoveredDotRect.bottom,
+                        centerX: hoveredDotRect.left + hoveredDotRect.width / 2,
+                        centerY: hoveredDotRect.top + hoveredDotRect.height / 2
+                    });
+
+                    // Position tooltip relative to DOT (not cursor) for consistent spacing
+                    const buffer = 20; // Buffer space around dots for overlap detection
+                    const tooltipOffset = 30; // Consistent offset from dot edge (must be > buffer)
+
+                    // Helper function to check if a position overlaps with any dots
+                    const overlapsAnyDot = (tooltipLeft, tooltipTop) => {
+                        const tooltipRight = tooltipLeft + tooltipRect.width;
+                        const tooltipBottom = tooltipTop + tooltipRect.height;
+
+                        for (const dot of dotsToAvoid) {
+                            const overlapsH = tooltipLeft < dot.right + buffer && tooltipRight > dot.left - buffer;
+                            const overlapsV = tooltipTop < dot.bottom + buffer && tooltipBottom > dot.top - buffer;
+                            if (overlapsH && overlapsV) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+
+                    // Helper function to check if position is within viewport
+                    const isInViewport = (tooltipLeft, tooltipTop) => {
+                        return tooltipLeft >= 10 &&
+                               tooltipTop >= 10 &&
+                               tooltipLeft + tooltipRect.width <= viewportWidth - 10 &&
+                               tooltipTop + tooltipRect.height <= viewportHeight - 10;
+                    };
+
+                    // Helper to check if position overlaps timeline
+                    const overlapsTimeline = (tooltipTop) => {
+                        if (!timelineRect) return false;
+                        const tooltipBottom = tooltipTop + tooltipRect.height;
+                        return tooltipBottom + 20 > timelineRect.top;
+                    };
+
+                    // Define candidate positions in priority order
+                    // All positions are relative to the DOT, not cursor, for consistent spacing
+                    const candidates = [];
+
+                    // Use the hovered dot's bounds as reference point
+                    const dotCenterX = dotsToAvoid[dotsToAvoid.length - 1].centerX;
+                    const dotCenterY = dotsToAvoid[dotsToAvoid.length - 1].centerY;
+                    const dotRight = dotsToAvoid[dotsToAvoid.length - 1].right;
+                    const dotLeft = dotsToAvoid[dotsToAvoid.length - 1].left;
+                    const dotTop = dotsToAvoid[dotsToAvoid.length - 1].top;
+                    const dotBottom = dotsToAvoid[dotsToAvoid.length - 1].bottom;
+
+                    // 1. Right of dot - vertically centered (default preference)
+                    candidates.push({
+                        left: dotRight + tooltipOffset,
+                        top: dotCenterY - tooltipRect.height / 2,
+                        priority: 1
+                    });
+
+                    // 2. Left of dot - vertically centered
+                    candidates.push({
+                        left: dotLeft - tooltipRect.width - tooltipOffset,
+                        top: dotCenterY - tooltipRect.height / 2,
+                        priority: 2
+                    });
+
+                    // 3. Above dot - horizontally centered
+                    candidates.push({
+                        left: dotCenterX - tooltipRect.width / 2,
+                        top: dotTop - tooltipRect.height - tooltipOffset,
+                        priority: 3
+                    });
+
+                    // 4. Below dot - horizontally centered (if not near timeline)
+                    if (!timelineRect || dotBottom + tooltipRect.height + tooltipOffset + 50 < timelineRect.top) {
+                        candidates.push({
+                            left: dotCenterX - tooltipRect.width / 2,
+                            top: dotBottom + tooltipOffset,
+                            priority: 4
+                        });
+                    }
+
+                    // 5. Right of dot - aligned with top
+                    candidates.push({
+                        left: dotRight + tooltipOffset,
+                        top: dotTop,
+                        priority: 5
+                    });
+
+                    // 6. Left of dot - aligned with top
+                    candidates.push({
+                        left: dotLeft - tooltipRect.width - tooltipOffset,
+                        top: dotTop,
+                        priority: 6
+                    });
+
+                    // 7. Right of dot - aligned with bottom
+                    candidates.push({
+                        left: dotRight + tooltipOffset,
+                        top: dotBottom - tooltipRect.height,
+                        priority: 7
+                    });
+
+                    // 8. Left of dot - aligned with bottom
+                    candidates.push({
+                        left: dotLeft - tooltipRect.width - tooltipOffset,
+                        top: dotBottom - tooltipRect.height,
+                        priority: 8
+                    });
+
+                    // Find the best valid candidate
+                    let bestPosition = null;
+
+                    for (const candidate of candidates) {
+                        // Check all constraints
+                        if (isInViewport(candidate.left, candidate.top) &&
+                            !overlapsAnyDot(candidate.left, candidate.top) &&
+                            !overlapsTimeline(candidate.top)) {
+                            bestPosition = candidate;
+                            break; // Use first valid candidate (highest priority)
+                        }
+                    }
+
+                    // If no perfect position found, use the highest priority candidate
+                    // and clamp to viewport bounds (accepting some overlap as last resort)
+                    if (!bestPosition) {
+                        bestPosition = candidates[0]; // Default to right of dot (highest priority)
+                    }
+
+                    let left = bestPosition.left;
+                    let top = bestPosition.top;
+
+                    // Final viewport clamping
+                    left = Math.max(10, Math.min(left, viewportWidth - tooltipRect.width - 10));
+                    top = Math.max(10, Math.min(top, viewportHeight - tooltipRect.height - 10));
+
+                    // Last check: if still overlapping timeline, push above it
+                    if (timelineRect && top + tooltipRect.height + 20 > timelineRect.top) {
+                        top = Math.max(10, timelineRect.top - tooltipRect.height - 30);
+                    }
+
+                    tooltip
+                        .style("left", left + "px")
+                        .style("top", top + "px");
+                }); // Close requestAnimationFrame
 
                 d3.select(this)
                     .transition()
                     .duration(200)
                     .attr("r", 8)
-                    .attr("fill", d => vis.colorScale(d.IMDB_Rating))
-                    .style("stroke", "#e50914")
-                    .style("stroke-width", "2px");
+                    .attr("fill", d => vis.colorScale(d.IMDB_Rating));
+                    // Let CSS handle stroke styling on hover
             })
-            .on("mouseout", function () {
+            .on("mouseout", function (event, d) {
+                // Don't skip tooltip hiding even in story mode
+
+                // Mark that we're no longer hovering over this specific dot
+                vis.isHoveringDot = false;
+
+                // Don't clear timeline pulse or dot highlights here - let them persist while moving between dots
+                // They will be cleared by chartArea mouseleave handler or grace timer
+
+                // Start grace timer to clear scatter highlights (not locked) - work in all modes
+                if (vis.timeline && !vis.timeline.isLocked && !vis.timeline.graceTimer) {
+                    vis.timeline.graceTimer = setTimeout(() => {
+                        // Only clear if we're still not hovering over any dot
+                        if (!vis.isHoveringDot) {
+                            // Clear dot highlights directly (don't use onYearHover to avoid conflicts)
+                            vis.chartArea.selectAll(".dot")
+                                .classed("is-highlighted", false)
+                                .classed("is-dimmed", false);
+                            // Clear timeline pulse
+                            vis.timeline.highlightYearOnTimeline(null);
+                            // Don't hide hairline - let timeline's own mouseleave handler manage it
+                            vis.timeline.hoveredYear = null;
+                        }
+                        vis.timeline.graceTimer = null;
+                    }, 150); // Shorter grace period for quicker response
+                }
+
                 d3.select("#tooltip").classed("visible", false);
 
                 d3.select(this)
                     .transition()
                     .duration(200)
                     .attr("r", 5)
-                    .attr("fill", d => vis.colorScale(d.IMDB_Rating))
-                    .style("stroke", "#ffffff");
+                    .attr("fill", vis.colorScale(d.IMDB_Rating))
+                    .style("stroke", null)  // Remove inline stroke style, let CSS handle it
+                    .style("stroke-width", null);
             })
+            .on("click", function(event, d) {
+                // Stop event propagation to prevent chartArea click handler from firing
+                event.stopPropagation();
+
+                // Only enable context-click in Explore mode (not Story mode)
+                if (vis.isStoryModeActive) return;
+
+                // Show context-click artifacts for this movie
+                vis.showContextClick(d);
+            })
+            // No focus/blur handlers - using roving tabindex pattern on container
+
+        // Apply the position transition
+        mergedCircles
             .interrupt() // Stop any ongoing transitions
             .transition("update")
             .duration(300)
-            .attr("cx", d => vis.xScale(d.Released_Year))
-            .attr("cy", d => vis.yScale(d.Gross))
+            .attr("cx", d => {
+                if (vis.currentTransform && (
+                    vis.currentTransform.k !== 1 ||
+                    vis.currentTransform.x !== 0 ||
+                    vis.currentTransform.y !== 0
+                )) {
+                    const newXScale = vis.currentTransform.rescaleX(vis.xScale);
+                    return newXScale(d.Released_Year);
+                }
+                return vis.xScale(d.Released_Year);
+            })
+            .attr("cy", d => {
+                if (vis.currentTransform && (
+                    vis.currentTransform.k !== 1 ||
+                    vis.currentTransform.x !== 0 ||
+                    vis.currentTransform.y !== 0
+                )) {
+                    const newYScale = vis.currentTransform.rescaleY(vis.yScale);
+                    return newYScale(d.Gross);
+                }
+                return vis.yScale(d.Gross);
+            })
             .attr("r", 5)
-            .attr("fill", d => vis.colorScale(d.IMDB_Rating))
-            .attr("opacity", 0.8);
+            .attr("fill", d => vis.colorScale(d.IMDB_Rating));
+
+        // Handle opacity separately from the transition to avoid conflicts
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            const targetMovie = vis.featuredMovies[vis.spotlightActive];
+            // Apply immediately using inline style with !important
+            mergedCircles.each(function(d) {
+                const dot = d3.select(this);
+
+                // Remove any conflicting classes
+                dot.classed("is-highlighted", false)
+                   .classed("is-dimmed", false)
+                   .classed("is-active", false);
+
+                const currentStyle = dot.attr("style") || "";
+                const baseStyle = currentStyle.replace(/opacity:[^;]*;?/gi, "").trim();
+
+                if (d && d.Series_Title && d.Series_Title === targetMovie.Series_Title) {
+                    dot.attr("style", baseStyle + "; opacity: 1 !important");
+                } else {
+                    dot.attr("style", baseStyle + "; opacity: 0.1 !important");
+                }
+            });
+        } else {
+            // Default opacity with transition - remove any inline opacity style first
+            mergedCircles.each(function() {
+                const dot = d3.select(this);
+                const currentStyle = dot.attr("style") || "";
+                const newStyle = currentStyle.replace(/opacity:[^;]*;?/gi, "").trim();
+                dot.attr("style", newStyle || null);
+            });
+
+            mergedCircles.transition("opacity")
+                .duration(300)
+                .style("opacity", 0.8);
+        }
+
+        // Re-apply locked year highlights after rendering (if timeline is locked)
+        if (vis.timeline && vis.timeline.isLocked && vis.timeline.lockedYear) {
+            vis.highlightYear(vis.timeline.lockedYear);
+        }
+
+        // Update spotlight halo position if spotlight is active
+        if (vis.spotlightActive && vis.featuredMovies[vis.spotlightActive]) {
+            const targetMovie = vis.featuredMovies[vis.spotlightActive];
+
+            // Get the current scale (considering zoom)
+            let xScale = vis.xScale;
+            let yScale = vis.yScale;
+            if (vis.currentTransform && (
+                vis.currentTransform.k !== 1 ||
+                vis.currentTransform.x !== 0 ||
+                vis.currentTransform.y !== 0
+            )) {
+                xScale = vis.currentTransform.rescaleX(vis.xScale);
+                yScale = vis.currentTransform.rescaleY(vis.yScale);
+            }
+
+            const newCx = xScale(targetMovie.Released_Year);
+            const newCy = yScale(targetMovie.Gross);
+
+            // Update halo position with smooth transition
+            vis.chartArea.selectAll(".spotlight-halo-group circle")
+                .transition()
+                .duration(300)
+                .attr("cx", newCx)
+                .attr("cy", newCy);
+        }
 
         // Add annotations for insights
         vis.drawAnnotations();
+
+        // Ensure context-click groups are above dots for proper layering
+        vis.contextLinesGroup.raise();
+        vis.contextAnnotationGroup.raise();
     }
 
     drawAnnotations() {
         let vis = this;
 
-        // Remove old annotations
-        vis.svg.selectAll(".annotation-group").remove();
+        // Remove old annotations (including any lingering opacity styles)
+        vis.chartArea.selectAll(".annotation-group").interrupt().remove();
+
+        // Also remove any orphaned annotation elements
+        vis.chartArea.selectAll(".annotation-line").remove();
+        vis.chartArea.selectAll(".annotation-label").remove();
+        vis.chartArea.selectAll(".annotation-label-2").remove();
 
         if (vis.displayData.length === 0) return;
 
-        // Create annotation group
-        let annotationGroup = vis.svg.append("g")
-            .attr("class", "annotation-group");
+        // Create annotation group with explicit opacity - add to chartArea so it's behind context groups
+        let annotationGroup = vis.chartArea.append("g")
+            .attr("class", "annotation-group")
+            .style("opacity", 1);  // Ensure group itself is fully opaque
+
+        // Check if we have a zoom transform applied
+        // If zoomed, we skip animations for cleaner rendering
+        const isZoomed = vis.currentTransform && (
+            vis.currentTransform.k !== 1 ||
+            vis.currentTransform.x !== 0 ||
+            vis.currentTransform.y !== 0
+        );
 
         // Find highest grossing movie
         let highestGrossing = vis.displayData.reduce((max, d) =>
@@ -476,30 +1922,39 @@ class plotChart {
 
         // Add annotation for highest grossing movie
         if (highestGrossing) {
-            let x = vis.xScale(highestGrossing.Released_Year);
-            let y = vis.yScale(highestGrossing.Gross);
+            // Apply current zoom transform if it exists (check for any transform, not just scale)
+            let xScale = vis.xScale;
+            let yScale = vis.yScale;
+
+            if (isZoomed) {
+                xScale = vis.currentTransform.rescaleX(vis.xScale);
+                yScale = vis.currentTransform.rescaleY(vis.yScale);
+            }
+
+            let x = xScale(highestGrossing.Released_Year);
+            let y = yScale(highestGrossing.Gross);
 
             // Determine if annotation should go above or below based on position
             let spaceAbove = y;
             let spaceBelow = vis.height - y;
             let annotateAbove = spaceAbove > 100; // Need at least 100px above to avoid covering points
 
-            // Position annotation with more clearance (20px from point, 50px connector line)
+            // Position annotation to touch dot border (dots have 5px radius + 1px stroke)
             let lineY1, lineY2, labelY;
             if (annotateAbove) {
                 // Annotation above the point
-                lineY1 = y - 20;  // 20px clearance from point
-                lineY2 = y - 70;  // 50px connector line
-                labelY = y - 75;  // 5px beyond line end
+                lineY1 = y - 6;   // Touch the dot border (5px radius + 1px stroke)
+                lineY2 = y - 50;  // 44px connector line
+                labelY = y - 55;  // 5px beyond line end
             } else {
                 // Annotation below the point
-                lineY1 = y + 20;
-                lineY2 = y + 70;
-                labelY = y + 85;  // More space below
+                lineY1 = y + 6;   // Touch the dot border (5px radius + 1px stroke)
+                lineY2 = y + 50;  // 44px connector line
+                labelY = y + 65;  // More space below
             }
 
-            // Start with full title
-            let fullText = `★ ${highestGrossing.Series_Title}`;
+            // Start with label instead of movie title
+            let fullText = `💰 Highest Grossing`;
 
             // Create temporary text element to measure actual width
             let tempText = annotationGroup.append("text")
@@ -511,28 +1966,9 @@ class plotChart {
             let actualWidth = tempText.node().getBBox().width;
             tempText.remove();
 
-            // Smart truncation and positioning based on actual width
+            // Positioning based on actual width (no truncation needed for short labels)
             let textAnchor = "middle";
             let labelX = x;
-            let titleText = highestGrossing.Series_Title;
-            let availableWidth = vis.width - 10; // Leave 5px margin on each side
-
-            // Check if we need to truncate based on position
-            if (actualWidth > availableWidth) {
-                // Text too long - truncate
-                let maxChars = Math.floor((availableWidth / actualWidth) * titleText.length) - 5;
-                titleText = titleText.substring(0, Math.max(maxChars, 15)) + "...";
-                fullText = `★ ${titleText}`;
-
-                // Re-measure after truncation
-                tempText = annotationGroup.append("text")
-                    .style("font-weight", "bold")
-                    .style("font-size", "11px")
-                    .style("opacity", 0)
-                    .text(fullText);
-                actualWidth = tempText.node().getBBox().width;
-                tempText.remove();
-            }
 
             // Determine horizontal position and alignment
             if (x - actualWidth / 2 < 5) {
@@ -545,86 +1981,135 @@ class plotChart {
                 labelX = vis.width - 5;
             }
 
-            // Add connector line
-            annotationGroup.append("line")
+            // Add connector line with data for zoom updates
+            // Skip animation if we're zoomed in (annotations are being redrawn)
+            const lineElement = annotationGroup.append("line")
                 .attr("class", "annotation-line")
+                .datum({Released_Year: highestGrossing.Released_Year, Gross: highestGrossing.Gross, annotateAbove: annotateAbove})
                 .attr("x1", x)
                 .attr("y1", lineY1)
                 .attr("x2", x)
                 .attr("y2", lineY2)
-                .style("stroke", "#e50914")
+                .style("stroke", "#ffffff")  // White lines to match text
                 .style("stroke-width", 2)
-                .style("opacity", 0)
-                .transition()
-                .duration(500)
-                .delay(400)
-                .style("opacity", 0.9);
+                .style("fill", "none");  // No fill for lines
 
-            // Add label
-            annotationGroup.append("text")
+            if (isZoomed) {
+                lineElement.style("opacity", 1);
+            } else {
+                lineElement
+                    .style("opacity", 0)
+                    .transition()
+                    .duration(500)
+                    .delay(400)
+                    .style("opacity", 1);
+            }
+
+            // Add label with data for zoom updates
+            const labelElement = annotationGroup.append("text")
                 .attr("class", "annotation-label")
+                .datum({Released_Year: highestGrossing.Released_Year, Gross: highestGrossing.Gross, annotateAbove: annotateAbove, textAnchor: textAnchor})
                 .attr("x", labelX)
                 .attr("y", labelY)
                 .style("text-anchor", textAnchor)
-                .style("fill", "#e50914")
+                .style("fill", "#ffffff")  // White text for better visibility
                 .style("font-weight", "bold")
                 .style("font-size", "11px")
-                .style("opacity", 0)
-                .text(fullText)
-                .transition()
-                .duration(500)
-                .delay(400)
-                .style("opacity", 1);
+                .text(fullText);
+
+            if (isZoomed) {
+                labelElement.style("opacity", 1);
+            } else {
+                labelElement
+                    .style("opacity", 0)
+                    .transition()
+                    .duration(500)
+                    .delay(400)
+                    .style("opacity", 1);
+            }
 
             // Add subtle background for readability
             let labelBBox = annotationGroup.select(".annotation-label").node().getBBox();
-            annotationGroup.insert("rect", ".annotation-label")
+            const bgRect = annotationGroup.insert("rect", ".annotation-label")
+                .attr("class", "annotation-bg-1")
                 .attr("x", labelBBox.x - 3)
                 .attr("y", labelBBox.y - 1)
                 .attr("width", labelBBox.width + 6)
                 .attr("height", labelBBox.height + 2)
-                .style("fill", "#111")
-                .style("opacity", 0)
-                .transition()
-                .duration(500)
-                .delay(400)
-                .style("opacity", 0.85);
+                .style("fill", "#121212");
+
+            if (isZoomed) {
+                bgRect.style("opacity", 0.5);
+            } else {
+                bgRect
+                    .style("opacity", 0)
+                    .transition()
+                    .duration(500)
+                    .delay(400)
+                    .style("opacity", 0.5);
+            }
         }
 
-        // Find highest rated movie with significant gross (top 20% of revenue)
-        let grossThreshold = d3.quantile(vis.displayData.map(d => d.Gross).sort((a, b) => a - b), 0.8);
-        let highRatedBlockbusters = vis.displayData.filter(d => d.Gross >= grossThreshold);
+        // Find highest rated movie (absolute highest, not just blockbusters)
+        // This ensures sync with Featured Movies panel
+        let highestRated = vis.displayData.reduce((max, d) =>
+            d.IMDB_Rating > max.IMDB_Rating ? d : max
+        );
 
-        if (highRatedBlockbusters.length > 0) {
-            let bestBlockbuster = highRatedBlockbusters.reduce((max, d) =>
-                d.IMDB_Rating > max.IMDB_Rating ? d : max
-            );
-
+        if (highestRated) {
             // Only show if different from highest grossing
-            if (bestBlockbuster.Series_Title !== highestGrossing.Series_Title) {
-                let x = vis.xScale(bestBlockbuster.Released_Year);
-                let y = vis.yScale(bestBlockbuster.Gross);
+            if (highestRated.Series_Title !== highestGrossing.Series_Title) {
+                // Apply current zoom transform if it exists
+                let xScale = vis.xScale;
+                let yScale = vis.yScale;
+
+                if (isZoomed) {
+                    xScale = vis.currentTransform.rescaleX(vis.xScale);
+                    yScale = vis.currentTransform.rescaleY(vis.yScale);
+                }
+
+                let x = xScale(highestRated.Released_Year);
+                let y = yScale(highestRated.Gross);
+
+                // Store first annotation position for collision detection
+                let firstAnnotationX = xScale(highestGrossing.Released_Year);
+                let firstAnnotationY = yScale(highestGrossing.Gross);
+                let firstAnnotateAbove = firstAnnotationY > 100;
 
                 // Determine if annotation should go above or below based on position
                 let spaceAbove = y;
                 let spaceBelow = vis.height - y;
                 let annotateAbove = spaceAbove > 100; // Need at least 100px above
 
-                // Position annotation with more clearance (20px from point, 50px connector line)
-                let lineY1, lineY2, labelY;
-                if (annotateAbove) {
-                    lineY1 = y - 20;  // 20px clearance from point
-                    lineY2 = y - 70;  // 50px connector line
-                    labelY = y - 75;  // 5px beyond line end
-                } else {
-                    lineY1 = y + 20;
-                    lineY2 = y + 70;
-                    labelY = y + 85;  // More space below
+                // Check for collision with first annotation
+                let xDistance = Math.abs(x - firstAnnotationX);
+                let yDistance = Math.abs(y - firstAnnotationY);
+
+                // If annotations are close together, force them to opposite sides
+                if (xDistance < 150 && yDistance < 100) {
+                    // Place this annotation on opposite side of the first one
+                    annotateAbove = !firstAnnotateAbove;
+
+                    // If we can't place it on opposite side (not enough space), offset horizontally
+                    if ((annotateAbove && spaceAbove < 70) || (!annotateAbove && spaceBelow < 70)) {
+                        annotateAbove = spaceAbove > spaceBelow;
+                    }
                 }
 
-                // Start with full title including rating
-                let titleText = bestBlockbuster.Series_Title;
-                let fullText = `⭐ ${titleText} (${bestBlockbuster.IMDB_Rating}/10)`;
+                // Position annotation to touch dot border (dots have 5px radius + 1px stroke)
+                let lineY1, lineY2, labelY;
+                if (annotateAbove) {
+                    lineY1 = y - 6;   // Touch the dot border (5px radius + 1px stroke)
+                    lineY2 = y - 50;  // 44px connector line
+                    labelY = y - 55;  // 5px beyond line end
+                } else {
+                    lineY1 = y + 6;   // Touch the dot border (5px radius + 1px stroke)
+                    lineY2 = y + 50;  // 44px connector line
+                    labelY = y + 65;  // More space below
+                }
+
+                // Use label instead of movie title
+                let fullText = `⭐ Highest Rated`;
 
                 // Create temporary text element to measure actual width
                 let tempText = annotationGroup.append("text")
@@ -636,29 +2121,9 @@ class plotChart {
                 let actualWidth = tempText.node().getBBox().width;
                 tempText.remove();
 
-                // Smart truncation and positioning based on actual width
+                // Positioning based on actual width (no truncation needed for short labels)
                 let textAnchor = "middle";
                 let labelX = x;
-                let availableWidth = vis.width - 10; // Leave 5px margin on each side
-
-                // Check if we need to truncate based on position
-                if (actualWidth > availableWidth) {
-                    // Text too long - truncate title part
-                    let ratingPart = ` (${bestBlockbuster.IMDB_Rating}/10)`;
-                    let availableForTitle = availableWidth - (ratingPart.length * 7); // Approximate rating width
-                    let maxChars = Math.floor(availableForTitle / 7) - 5;
-                    titleText = titleText.substring(0, Math.max(maxChars, 10)) + "...";
-                    fullText = `⭐ ${titleText}${ratingPart}`;
-
-                    // Re-measure after truncation
-                    tempText = annotationGroup.append("text")
-                        .style("font-weight", "bold")
-                        .style("font-size", "11px")
-                        .style("opacity", 0)
-                        .text(fullText);
-                    actualWidth = tempText.node().getBBox().width;
-                    tempText.remove();
-                }
 
                 // Determine horizontal position and alignment
                 if (x - actualWidth / 2 < 5) {
@@ -671,51 +2136,1404 @@ class plotChart {
                     labelX = vis.width - 5;
                 }
 
-                // Add connector line
-                annotationGroup.append("line")
+                // Add connector line with data for zoom updates
+                // Use isZoomed from parent scope
+                const lineElement2 = annotationGroup.append("line")
                     .attr("class", "annotation-line")
+                    .datum({Released_Year: highestRated.Released_Year, Gross: highestRated.Gross, annotateAbove: annotateAbove})
                     .attr("x1", x)
                     .attr("y1", lineY1)
                     .attr("x2", x)
                     .attr("y2", lineY2)
-                    .style("stroke", "#ff2919")
+                    .style("stroke", "#ffffff")  // White lines to match text  // Use same color as highest grossing for consistency
                     .style("stroke-width", 2)
-                    .style("opacity", 0)
-                    .transition()
-                    .duration(500)
-                    .delay(600)
-                    .style("opacity", 0.9);
+                    .style("fill", "none");  // No fill for lines
 
-                // Add label
-                annotationGroup.append("text")
+                if (isZoomed) {
+                    lineElement2.style("opacity", 1);
+                } else {
+                    lineElement2
+                        .style("opacity", 0)
+                        .transition()
+                        .duration(500)
+                        .delay(600)
+                        .style("opacity", 1);
+                }
+
+                // Add label with data for zoom updates
+                const labelElement2 = annotationGroup.append("text")
                     .attr("class", "annotation-label annotation-label-2")
+                    .datum({Released_Year: highestRated.Released_Year, Gross: highestRated.Gross, annotateAbove: annotateAbove, textAnchor: textAnchor})
                     .attr("x", labelX)
                     .attr("y", labelY)
                     .style("text-anchor", textAnchor)
-                    .style("fill", "#ff2919")
+                    .style("fill", "#ffffff")  // White text for better visibility
                     .style("font-weight", "bold")
                     .style("font-size", "11px")
-                    .style("opacity", 0)
-                    .text(fullText)
-                    .transition()
-                    .duration(500)
-                    .delay(600)
-                    .style("opacity", 1);
+                    .text(fullText);
 
-                // Add background
-                let labelBBox = annotationGroup.select(".annotation-label-2").node().getBBox();
-                annotationGroup.insert("rect", ".annotation-label-2")
-                    .attr("x", labelBBox.x - 3)
-                    .attr("y", labelBBox.y - 1)
-                    .attr("width", labelBBox.width + 6)
-                    .attr("height", labelBBox.height + 2)
-                    .style("fill", "#111")
-                    .style("opacity", 0)
-                    .transition()
-                    .duration(500)
-                    .delay(600)
-                    .style("opacity", 0.85);
+                if (isZoomed) {
+                    labelElement2.style("opacity", 1);
+                } else {
+                    labelElement2
+                        .style("opacity", 0)
+                        .transition()
+                        .duration(500)
+                        .delay(600)
+                        .style("opacity", 1);
+                }
+
+                // Add subtle background for readability (second annotation)
+                let labelBBox2 = annotationGroup.select(".annotation-label-2").node().getBBox();
+                const bgRect2 = annotationGroup.insert("rect", ".annotation-label-2")
+                    .attr("class", "annotation-bg-2")
+                    .attr("x", labelBBox2.x - 3)
+                    .attr("y", labelBBox2.y - 1)
+                    .attr("width", labelBBox2.width + 6)
+                    .attr("height", labelBBox2.height + 2)
+                    .style("fill", "#121212");
+
+                if (isZoomed) {
+                    bgRect2.style("opacity", 0.5);
+                } else {
+                    bgRect2
+                        .style("opacity", 0)
+                        .transition()
+                        .duration(500)
+                        .delay(600)
+                        .style("opacity", 0.5);
+                }
             }
         }
+
+        // Add annotation for Underrated Gem (high rating, low revenue)
+        let medianGross = d3.median(vis.displayData, d => d.Gross);
+        let hiddenGems = vis.displayData.filter(d => d.Gross < medianGross);
+        let hiddenGem = null;  // Declare in outer scope so it's accessible later
+
+        if (hiddenGems.length > 0) {
+            hiddenGem = hiddenGems.reduce((max, d) =>
+                d.IMDB_Rating > max.IMDB_Rating ? d : max
+            );
+
+            // Apply current zoom transform if it exists
+            let xScale = vis.xScale;
+            let yScale = vis.yScale;
+
+            if (isZoomed) {
+                xScale = vis.currentTransform.rescaleX(vis.xScale);
+                yScale = vis.currentTransform.rescaleY(vis.yScale);
+            }
+
+            let x = xScale(hiddenGem.Released_Year);
+            let y = yScale(hiddenGem.Gross);
+
+            // Determine if annotation should go above or below
+            let spaceAbove = y;
+            let annotateAbove = spaceAbove > 100;
+
+            // Position annotation to touch dot border (dots have 5px radius + 1px stroke)
+            let lineY1, lineY2, labelY;
+            if (annotateAbove) {
+                lineY1 = y - 6;   // Touch the dot border (5px radius + 1px stroke)
+                lineY2 = y - 50;  // 44px connector line
+                labelY = y - 55;  // 5px beyond line end
+            } else {
+                lineY1 = y + 6;   // Touch the dot border (5px radius + 1px stroke)
+                lineY2 = y + 50;  // 44px connector line
+                labelY = y + 65;  // More space below
+            }
+
+            // Use label instead of movie title
+            let fullText = `💎 Underrated Gem`;
+
+            // Position label
+            let textAnchor = "middle";
+            let labelX = x;
+
+            // Add connector line
+            const lineElement = annotationGroup.append("line")
+                .attr("class", "annotation-line annotation-line-3")
+                .datum({Released_Year: hiddenGem.Released_Year, Gross: hiddenGem.Gross, annotateAbove: annotateAbove})
+                .attr("x1", x)
+                .attr("y1", lineY1)
+                .attr("x2", x)
+                .attr("y2", lineY2)
+                .style("stroke", "#ffffff")  // White lines to match text
+                .style("stroke-width", 2)
+                .style("fill", "none");
+
+            if (isZoomed) {
+                lineElement.style("opacity", 1);
+            } else {
+                lineElement
+                    .style("opacity", 0)
+                    .transition()
+                    .duration(500)
+                    .delay(800)
+                    .style("opacity", 1);
+            }
+
+            // Add label
+            const labelElement = annotationGroup.append("text")
+                .attr("class", "annotation-label annotation-label-3")
+                .datum({Released_Year: hiddenGem.Released_Year, Gross: hiddenGem.Gross, annotateAbove: annotateAbove, textAnchor: textAnchor})
+                .attr("x", labelX)
+                .attr("y", labelY)
+                .style("text-anchor", textAnchor)
+                .style("fill", "#ffffff")  // White text for better visibility
+                .style("font-weight", "bold")
+                .style("font-size", "11px")
+                .text(fullText);
+
+            if (isZoomed) {
+                labelElement.style("opacity", 1);
+            } else {
+                labelElement
+                    .style("opacity", 0)
+                    .transition()
+                    .duration(500)
+                    .delay(800)
+                    .style("opacity", 1);
+            }
+
+            // Add background for readability
+            let labelBBox3 = annotationGroup.select(".annotation-label-3").node().getBBox();
+            const bgRect3 = annotationGroup.insert("rect", ".annotation-label-3")
+                .attr("class", "annotation-bg-3")
+                .attr("x", labelBBox3.x - 3)
+                .attr("y", labelBBox3.y - 1)
+                .attr("width", labelBBox3.width + 6)
+                .attr("height", labelBBox3.height + 2)
+                .style("fill", "#121212");
+
+            if (isZoomed) {
+                bgRect3.style("opacity", 0.5);
+            } else {
+                bgRect3
+                    .style("opacity", 0)
+                    .transition()
+                    .duration(500)
+                    .delay(800)
+                    .style("opacity", 0.5);
+            }
+        }
+
+        // Mark the three featured annotation dots with special styling
+        vis.chartArea.selectAll(".dot")
+            .classed("featured-annotation-dot", d => {
+                if (!highestGrossing && !highestRated && !hiddenGem) return false;
+
+                const isHighestGrossing = highestGrossing && d.Series_Title === highestGrossing.Series_Title;
+                const isHighestRated = highestRated && d.Series_Title === highestRated.Series_Title;
+                const isHiddenGem = hiddenGem && d.Series_Title === hiddenGem.Series_Title;
+
+                return isHighestGrossing || isHighestRated || isHiddenGem;
+            });
+    }
+
+    // Handle keyboard navigation for roving tabindex pattern
+    handleKeyboardNavigation(event) {
+        let vis = this;
+
+        // Ignore keyboard input if container is not focused or story mode is active
+        if (!vis.isContainerFocused || vis.isStoryModeActive) return;
+
+        if (vis.displayData.length === 0) return;
+
+        // Sort data by year (x-axis position) for spatial navigation
+        // Secondary sort by gross (y-axis) for movies in the same year
+        const sortedByPosition = [...vis.displayData].sort((a, b) => {
+            if (a.Released_Year !== b.Released_Year) {
+                return a.Released_Year - b.Released_Year; // Earlier years first (left to right)
+            }
+            return a.Gross - b.Gross; // Lower gross first (bottom to top)
+        });
+
+        // Initialize active dot if not set (first key press) - start with earliest year
+        if (vis.activeDotIndex === null) {
+            vis.activeDotIndex = 0;
+            vis.updateActiveDot();
+            return;
+        }
+
+        // Find current dot in sorted array
+        const currentDatum = vis.displayData[vis.activeDotIndex];
+        const currentSortedIndex = sortedByPosition.findIndex(d => d === currentDatum);
+
+        let handled = false;
+        let newSortedIndex = currentSortedIndex;
+
+        switch (event.key) {
+            case "ArrowRight":
+            case "ArrowDown":
+                // Move to next dot (later year, or higher gross in same year)
+                newSortedIndex = Math.min(sortedByPosition.length - 1, currentSortedIndex + 1);
+                handled = true;
+                break;
+
+            case "ArrowLeft":
+            case "ArrowUp":
+                // Move to previous dot (earlier year, or lower gross in same year)
+                newSortedIndex = Math.max(0, currentSortedIndex - 1);
+                handled = true;
+                break;
+
+            case "Home":
+                // Jump to earliest year
+                newSortedIndex = 0;
+                handled = true;
+                break;
+
+            case "End":
+                // Jump to latest year
+                newSortedIndex = sortedByPosition.length - 1;
+                handled = true;
+                break;
+
+            case "Enter":
+            case " ": // Space
+                // Trigger context-click for the active dot
+                if (vis.activeDotIndex !== null && vis.displayData[vis.activeDotIndex]) {
+                    vis.showContextClick(vis.displayData[vis.activeDotIndex]);
+                }
+                handled = true;
+                break;
+        }
+
+        if (handled) {
+            event.preventDefault();
+            if (newSortedIndex !== currentSortedIndex) {
+                // Find the new datum in the original displayData array
+                const newDatum = sortedByPosition[newSortedIndex];
+                const newIndex = vis.displayData.findIndex(d => d === newDatum);
+                vis.activeDotIndex = newIndex;
+                vis.updateActiveDot();
+            }
+        }
+    }
+
+    // Update visual styling for the active dot
+    updateActiveDot() {
+        let vis = this;
+
+        if (vis.activeDotIndex === null || vis.displayData.length === 0) return;
+
+        const activeDatum = vis.displayData[vis.activeDotIndex];
+
+        // Remove active styling from all dots
+        vis.chartArea.selectAll(".dot")
+            .classed("is-active", false)
+            .attr("r", 5)
+            .style("stroke", "#ffffff")
+            .style("stroke-width", "1px");
+
+        // Apply active styling to the current dot
+        const dots = vis.chartArea.selectAll(".dot").nodes();
+        const activeDot = d3.select(dots[vis.activeDotIndex]);
+
+        activeDot
+            .classed("is-active", true)
+            .attr("r", 8)
+            .style("stroke", "#ffffff")  // Keep white stroke for consistency
+            .style("stroke-width", "2px");
+
+        // Trigger timeline pulse for active dot AND highlight same-year dots
+        if (vis.timeline) {
+            vis.timeline.highlightYearOnTimeline(activeDatum.Released_Year);
+        }
+        // Highlight all dots from the same year (consistent with hover behavior)
+        vis.highlightYear(activeDatum.Released_Year);
+
+        // Update ARIA live region to announce the active movie
+        vis.announceActiveDot(activeDatum);
+    }
+
+    // Announce active dot to screen readers
+    announceActiveDot(datum) {
+        // Create or update an ARIA live region
+        let liveRegion = document.getElementById('scatter-live-region');
+        if (!liveRegion) {
+            liveRegion = document.createElement('div');
+            liveRegion.id = 'scatter-live-region';
+            liveRegion.className = 'sr-only';
+            liveRegion.setAttribute('aria-live', 'polite');
+            liveRegion.setAttribute('aria-atomic', 'true');
+            document.body.appendChild(liveRegion);
+        }
+
+        liveRegion.textContent = `${datum.Series_Title}, ${datum.Released_Year}, $${(datum.Gross / 1000000).toFixed(1)} million gross, ${datum.IMDB_Rating} out of 10 rating`;
+    }
+
+    // ===== Story Mode Programmatic Control Methods =====
+
+    /**
+     * Programmatically set selected genres (for story mode)
+     * @param {Array|string} genres - Array of genre names or 'All' for all genres
+     */
+    programmaticSetGenres(genres) {
+        let vis = this;
+
+        vis.selectedGenres.clear();
+
+        if (genres === 'All' || (Array.isArray(genres) && genres.length === 0)) {
+            // Select all genres
+            vis.genres.forEach(genre => vis.selectedGenres.add(genre));
+        } else if (Array.isArray(genres)) {
+            // Select specific genres
+            genres.forEach(genre => {
+                if (vis.genres.includes(genre)) {
+                    vis.selectedGenres.add(genre);
+                }
+            });
+        }
+
+        // Update dropdown UI
+        d3.select("#select-all").property("checked", vis.selectedGenres.size === vis.genres.length);
+        d3.selectAll("#genre-dropdown input[type='checkbox']").property("checked", function() {
+            const genreValue = this.value;
+            return vis.selectedGenres.has(genreValue);
+        });
+
+        // Update dropdown text
+        const dropdownText = d3.select("#dropdown-text");
+        if (vis.selectedGenres.size === vis.genres.length) {
+            dropdownText.text("All Movie Genres");
+        } else if (vis.selectedGenres.size === 1) {
+            dropdownText.text(Array.from(vis.selectedGenres)[0]);
+        } else {
+            dropdownText.text(`${vis.selectedGenres.size} Genres Selected`);
+        }
+
+        // Update visualization
+        vis.wrangleData();
+    }
+
+    /**
+     * Add story annotation to a specific movie dot
+     * @param {string} movieTitle - Title of the movie to annotate
+     */
+    addStoryAnnotation(movieTitle) {
+        let vis = this;
+
+        // Find the movie in displayData
+        const movie = vis.displayData.find(d => d.Series_Title === movieTitle);
+        if (!movie) {
+            console.warn(`Movie "${movieTitle}" not found in current view`);
+            return;
+        }
+
+        // Add subtle marker to the dot (for non-clickable annotations like Jaws)
+        // Clickable dots will get the pulsing animation overlay separately
+        vis.chartArea.selectAll(".dot")
+            .filter(d => d.Series_Title === movieTitle)
+            .classed("story-annotation-dot", true)
+            .style("stroke", "#B8860B")  // Darker gold (DarkGoldenrod)
+            .style("stroke-width", "2px");
+            // Animation (pulse-gold) is handled by CSS
+    }
+
+    /**
+     * Clear all story annotations
+     */
+    clearStoryAnnotations() {
+        let vis = this;
+
+        // Remove glow effects from all dots
+        vis.chartArea.selectAll(".dot")
+            .classed("story-annotation-dot", false)
+            .style("stroke", null)
+            .style("stroke-width", null)
+            .style("filter", null);
+    }
+
+    /**
+     * Make specific dots clickable for story mode interaction
+     * @param {Array} movieTitles - Array of movie titles to make clickable
+     * @param {Function} callback - Function to call when a dot is clicked
+     */
+    makeDotsClickableForStory(movieTitles, callback) {
+        let vis = this;
+
+        vis.chartArea.selectAll(".dot")
+            .filter(d => movieTitles.includes(d.Series_Title))
+            .classed("story-clickable-dot", true)
+            .classed("story-clickable-high", d => d.IMDB_Rating >= vis.ratingSplit)  // High-rated (red) dots
+            .classed("story-clickable-low", d => d.IMDB_Rating < vis.ratingSplit)   // Low-rated (blue) dots
+            .style("cursor", "pointer")
+            // Animation is handled by CSS classes (.story-clickable-high / .story-clickable-low), not inline
+            .on("click.story", function(event, d) {
+                event.stopPropagation();
+                callback(d);
+            })
+            .on("keydown.story", function(event, d) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    callback(d);
+                }
+            })
+            .attr("tabindex", "0")
+            .attr("role", "button")
+            .attr("aria-label", d => `Click to learn more about ${d.Series_Title}`);
+    }
+
+    /**
+     * Clear clickable dot handlers for story mode
+     */
+    clearClickableDotsForStory() {
+        let vis = this;
+
+        vis.chartArea.selectAll(".dot")
+            .classed("story-clickable-dot", false)
+            .classed("story-clickable-high", false)  // Remove high-rated glow class
+            .classed("story-clickable-low", false)   // Remove low-rated glow class
+            .style("cursor", null)
+            // Animation was handled by CSS classes, no inline style to clear
+            .on("click.story", null)
+            .on("keydown.story", null)
+            .attr("tabindex", null)
+            .attr("role", null)
+            .attr("aria-label", null);
+    }
+
+    /**
+     * Disable zoom and pan interactions (for story mode)
+     */
+    disableZoomPan() {
+        let vis = this;
+
+        // Remove zoom behavior
+        vis.svgContainer.on(".zoom", null);
+    }
+
+    /**
+     * Re-enable zoom and pan interactions
+     */
+    enableZoomPan() {
+        let vis = this;
+
+        // Re-attach zoom behavior
+        vis.svgContainer.call(vis.zoom);
+    }
+
+    /**
+     * Get current state snapshot for restoration
+     * @returns {Object} Current state object
+     */
+    getStateSnapshot() {
+        let vis = this;
+
+        return {
+            selectedGenres: Array.from(vis.selectedGenres),
+            yearRange: vis.yearRange ? [...vis.yearRange] : null,
+            zoomTransform: vis.currentTransform ? {...vis.currentTransform} : {k: 1, x: 0, y: 0},
+            ratingThreshold: vis.currentRatingSplit,
+            visibleBands: {
+                high: vis.legend.selectAll(".legend-item").filter(function() {
+                    return d3.select(this).attr("data-band") === "high";
+                }).classed("disabled", false),
+                low: vis.legend.selectAll(".legend-item").filter(function() {
+                    return d3.select(this).attr("data-band") === "low";
+                }).classed("disabled", false)
+            }
+        };
+    }
+
+    /**
+     * Restore state from snapshot
+     * @param {Object} snapshot - State snapshot to restore
+     */
+    restoreStateSnapshot(snapshot) {
+        let vis = this;
+
+        // Restore genre selection
+        if (snapshot.selectedGenres) {
+            vis.programmaticSetGenres(snapshot.selectedGenres);
+        }
+
+        // Restore year range
+        if (snapshot.yearRange) {
+            vis.updateYearRange(snapshot.yearRange);
+        } else {
+            vis.updateYearRange(null);
+        }
+
+        // Restore zoom transform
+        if (snapshot.zoomTransform) {
+            const transform = d3.zoomIdentity
+                .translate(snapshot.zoomTransform.x, snapshot.zoomTransform.y)
+                .scale(snapshot.zoomTransform.k);
+            vis.svgContainer.call(vis.zoom.transform, transform);
+        }
+
+        // Restore rating threshold
+        if (snapshot.ratingThreshold !== undefined) {
+            vis.updateRatingSplit(snapshot.ratingThreshold);
+            d3.select("#rating-threshold-slider").property("value", snapshot.ratingThreshold);
+        }
+    }
+
+    /**
+     * Context-Click Feature: Show dynamic reference lines and context annotation
+     * @param {Object} movie - The clicked movie data object
+     */
+    showContextClick(movie) {
+        let vis = this;
+
+        // Clear any existing context-click artifacts first
+        vis.clearContextClick();
+
+        // Don't hide tooltip - user wants it always visible
+
+        // Store clicked movie
+        vis.contextClickedMovie = movie;
+        vis.contextClickActive = true;
+
+        // Calculate peer averages (excluding clicked movie)
+        const peerStats = vis.calculatePeerAverages(movie);
+
+        // Get current scales (accounting for zoom)
+        let xScale = vis.xScale;
+        let yScale = vis.yScale;
+        if (vis.currentTransform && (vis.currentTransform.k !== 1 || vis.currentTransform.x !== 0 || vis.currentTransform.y !== 0)) {
+            xScale = vis.currentTransform.rescaleX(vis.xScale);
+            yScale = vis.currentTransform.rescaleY(vis.yScale);
+        }
+
+        // Draw horizontal reference line (average gross) with distinct color
+        vis.contextLinesGroup.append("line")
+            .attr("class", "context-line-horizontal")
+            .attr("x1", 0)
+            .attr("x2", vis.width)
+            .attr("y1", yScale(peerStats.avgGross))
+            .attr("y2", yScale(peerStats.avgGross))
+            .attr("stroke", "#00CED1")  // Cyan/turquoise - stands out against red/blue dots
+            .attr("stroke-width", 3)  // Make thicker for better visibility
+            .attr("stroke-dasharray", "10,5")
+            .attr("opacity", 0)
+            .transition()
+            .duration(300)
+            .attr("opacity", 1);
+
+        // Add label background for better readability
+        const horizontalLabelBg = vis.contextLinesGroup.append("rect")
+            .attr("class", "context-line-label-bg")
+            .attr("x", vis.width - 75)
+            .attr("y", yScale(peerStats.avgGross) - 15)
+            .attr("width", 65)
+            .attr("height", 18)
+            .attr("fill", "rgba(0, 0, 0, 0.8)")
+            .attr("rx", 2)
+            .attr("opacity", 0)
+            .transition()
+            .duration(300)
+            .attr("opacity", 0.9);
+
+        // Add label for horizontal reference line
+        vis.contextLinesGroup.append("text")
+            .attr("class", "context-line-label")
+            .attr("x", vis.width - 42)
+            .attr("y", yScale(peerStats.avgGross) - 2)
+            .attr("text-anchor", "middle")
+            .attr("fill", "#00CED1")  // Cyan text to match reference lines
+            .attr("font-size", "12px")
+            .attr("font-weight", "bold")
+            .text("Avg Gross")
+            .attr("opacity", 0)
+            .transition()
+            .duration(300)
+            .attr("opacity", 1);
+
+        // Draw vertical reference line (average year) with distinct color
+        vis.contextLinesGroup.append("line")
+            .attr("class", "context-line-vertical")
+            .attr("x1", xScale(peerStats.avgYear))
+            .attr("x2", xScale(peerStats.avgYear))
+            .attr("y1", 0)
+            .attr("y2", vis.height)
+            .attr("stroke", "#00CED1")  // Cyan/turquoise - stands out against red/blue dots
+            .attr("stroke-width", 3)  // Make thicker for better visibility
+            .attr("stroke-dasharray", "10,5")
+            .attr("opacity", 0)
+            .transition()
+            .duration(300)
+            .attr("opacity", 1);
+
+        // Add label background for vertical reference line
+        const verticalLabelBg = vis.contextLinesGroup.append("rect")
+            .attr("class", "context-line-label-bg")
+            .attr("x", xScale(peerStats.avgYear) - 25)
+            .attr("y", 5)
+            .attr("width", 60)
+            .attr("height", 18)
+            .attr("fill", "rgba(0, 0, 0, 0.8)")
+            .attr("rx", 2)
+            .attr("opacity", 0)
+            .transition()
+            .duration(300)
+            .attr("opacity", 0.9);
+
+        // Add label for vertical reference line
+        vis.contextLinesGroup.append("text")
+            .attr("class", "context-line-label")
+            .attr("x", xScale(peerStats.avgYear) + 5)
+            .attr("y", 18)
+            .attr("text-anchor", "middle")
+            .attr("fill", "#00CED1")  // Cyan text to match reference lines
+            .attr("font-size", "12px")
+            .attr("font-weight", "bold")
+            .text("Avg Year")
+            .attr("opacity", 0)
+            .transition()
+            .duration(300)
+            .attr("opacity", 1);
+
+        // Determine context label based on relative performance
+        const contextInfo = vis.determineContextLabel(movie, peerStats);
+
+        // Position for annotation (next to clicked dot) - use transformed scales
+        const dotX = xScale(movie.Released_Year);
+        const dotY = yScale(movie.Gross);
+
+        // Create temporary annotation group to measure text
+        const tempAnnotation = vis.contextAnnotationGroup.append("g")
+            .attr("class", "context-annotation-box-temp")
+            .attr("opacity", 0);
+
+        // Add all text elements to measure their size
+        tempAnnotation.append("text")
+            .attr("class", "context-label")
+            .attr("x", 0)
+            .attr("y", 25)
+            .attr("fill", contextInfo.color)
+            .attr("font-size", "15px")
+            .attr("font-weight", "bold")
+            .text(contextInfo.label);
+
+        const textIndentTemp = 20; // Consistent with actual text
+
+        const grossText = tempAnnotation.append("text")
+            .attr("class", "context-detail")
+            .attr("x", textIndentTemp)
+            .attr("y", 50)
+            .attr("fill", "#ffffff")
+            .attr("font-size", "13px");
+
+        grossText.append("tspan").text("Gross: ");
+        grossText.append("tspan")
+            .attr("font-weight", "bold")
+            .attr("fill", "#FFD700")
+            .text(contextInfo.grossDiff);
+        grossText.append("tspan")
+            .attr("fill", "#ffffff")
+            .text(` vs. ${peerStats.context} Avg.`);
+
+        const ratingText = tempAnnotation.append("text")
+            .attr("class", "context-detail")
+            .attr("x", textIndentTemp)
+            .attr("y", 72)
+            .attr("fill", "#ffffff")
+            .attr("font-size", "13px");
+
+        ratingText.append("tspan").text("Rating: ");
+        ratingText.append("tspan")
+            .attr("font-weight", "bold")
+            .attr("fill", "#FFD700")
+            .text(contextInfo.ratingDiff);
+        ratingText.append("tspan")
+            .attr("fill", "#ffffff")
+            .text(` vs. ${peerStats.context} Avg.`);
+
+        // Measure the bounding box of all text elements
+        const tempBBox = tempAnnotation.node().getBBox();
+        tempAnnotation.remove(); // Remove temp group
+
+        // Calculate annotation dimensions with padding
+        const padding = 20;
+        // Add extra space for the question mark button (40px gap + button width)
+        const buttonSpace = 60; // Space needed for button and minimum gap
+        const annotationWidth = Math.max(tempBBox.width + padding * 2 + buttonSpace, 250); // Min width 250px, plus space for button
+        const annotationHeight = tempBBox.height + padding * 2;
+
+        // Calculate annotation position (offset to avoid overlap)
+        let annotationX = dotX + 15;
+        let annotationY = dotY - 50;
+
+        // Keep annotation within chart bounds
+        if (annotationX + annotationWidth > vis.width) {
+            annotationX = dotX - annotationWidth - 15;
+        }
+        if (annotationY < 0) {
+            annotationY = dotY + 15;
+        }
+        if (annotationY + annotationHeight > vis.height) {
+            annotationY = vis.height - annotationHeight - 10;
+        }
+
+        // Create annotation group with data for zoom updates
+        const annotation = vis.contextAnnotationGroup.append("g")
+            .attr("class", "context-annotation-box")
+            .attr("transform", `translate(${annotationX}, ${annotationY})`)
+            .datum({
+                Released_Year: movie.Released_Year,
+                Gross: movie.Gross,
+                originalTransform: `translate(${annotationX}, ${annotationY})`,
+                width: annotationWidth,
+                height: annotationHeight
+            })
+            .attr("opacity", 0);
+
+        // Background rectangle with opaque fill to cover dots
+        annotation.append("rect")
+            .attr("width", annotationWidth)
+            .attr("height", annotationHeight)
+            .attr("fill", "#1a1a1a")  // Opaque black background
+            .attr("stroke", contextInfo.color)
+            .attr("stroke-width", 2.5)
+            .attr("rx", 8)
+            .style("filter", "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))");
+
+        // First create the label to measure its actual width
+        const labelText = annotation.append("text")
+            .attr("class", "context-label")
+            .attr("x", annotationWidth / 2)
+            .attr("y", 25)
+            .attr("text-anchor", "middle")
+            .attr("fill", contextInfo.color)
+            .attr("font-size", "15px")
+            .attr("font-weight", "bold")
+            .style("text-shadow", "0 1px 2px rgba(0,0,0,0.5)")
+            .text(contextInfo.label);
+
+        // Measure the actual label width to position button correctly
+        const labelBBox = labelText.node().getBBox();
+        // Ensure sufficient spacing: at least 40px from text for longest titles
+        const minButtonX = (annotationWidth / 2) + (labelBBox.width / 2) + 40; // 40px minimum gap (increased for BLOCKBUSTER OUTPERFORMER)
+        const maxButtonX = annotationWidth - 25; // 25px from right edge
+        const buttonX = Math.min(maxButtonX, minButtonX);
+
+        // Add help button (question mark) with proper spacing from label
+        const helpButton = annotation.append("g")
+            .attr("class", "context-help-button")
+            .attr("transform", `translate(${buttonX}, 20)`)
+            .style("cursor", "pointer")
+            .style("pointer-events", "all"); // Ensure button is clickable
+
+        // Invisible larger hit area for easier clicking
+        helpButton.append("circle")
+            .attr("r", 15)
+            .attr("fill", "transparent")
+            .style("pointer-events", "all");
+
+        // Button background circle with gradient for 3D effect
+        helpButton.append("circle")
+            .attr("r", 11)
+            .attr("fill", "#4a4a4a")
+            .attr("stroke", "#999")
+            .attr("stroke-width", 2)
+            .style("filter", "drop-shadow(0 2px 5px rgba(0,0,0,0.6))")
+            .style("transition", "all 0.2s ease")
+            .style("pointer-events", "all"); // Make sure circle is clickable
+
+        helpButton.append("text")
+            .attr("text-anchor", "middle")
+            .attr("y", 4.5)
+            .attr("fill", "#fff")
+            .attr("font-size", "14px")
+            .attr("font-weight", "bold")
+            .style("pointer-events", "none")
+            .text("?");
+
+        // Create help tooltip (hidden by default)
+        const helpTooltip = annotation.append("g")
+            .attr("class", "context-help-tooltip")
+            .attr("opacity", 0)
+            .style("pointer-events", "none")
+            .style("display", "none");
+
+        // Auto-sized tooltip with proper spacing
+        const tooltipPadding = 15;
+        const tooltipWidth = 300;
+        const tooltipHeight = 210; // Increased to accommodate more spacing around divider
+
+        // Tooltip background with gradient for depth
+        helpTooltip.append("rect")
+            .attr("width", tooltipWidth)
+            .attr("height", tooltipHeight)
+            .attr("fill", "#1a1a1a")
+            .attr("stroke", "#FFD700")
+            .attr("stroke-width", 1)
+            .attr("stroke-opacity", 0.3)
+            .attr("rx", 8)
+            .style("filter", "drop-shadow(0 6px 12px rgba(0,0,0,0.8))");
+
+        // Title with underline
+        helpTooltip.append("text")
+            .attr("x", tooltipPadding)
+            .attr("y", tooltipPadding + 14)
+            .attr("font-weight", "bold")
+            .attr("font-size", "13px")
+            .attr("fill", "#FFD700")
+            .text("Context-Click Insights");
+
+        // Add separator line with more spacing
+        helpTooltip.append("line")
+            .attr("x1", tooltipPadding)
+            .attr("x2", tooltipWidth - tooltipPadding)
+            .attr("y1", 42)  // Increased from 35 to give more space after title
+            .attr("y2", 42)
+            .attr("stroke", "#444")
+            .attr("stroke-width", 1);
+
+        // Create structured content for each insight type with better spacing
+        const insights = [
+            { emoji: "🚀", title: "Blockbuster Outperformer", desc: "High ratings + high gross", color: "#ffd700" },
+            { emoji: "💎", title: "Acclaimed Gem", desc: "High ratings + low gross", color: "#87ceeb" },
+            { emoji: "🍿", title: "Critic-Proof Hit", desc: "Low ratings + high gross", color: "#ff6347" },
+            { emoji: "📉", title: "Below Average", desc: "Low ratings + low gross", color: "#999" }
+        ];
+
+        insights.forEach((insight, i) => {
+            const yPos = 60 + (i * 40); // Start at 60 (increased from 50) for more space after divider
+
+            // Create group for each insight
+            const insightGroup = helpTooltip.append("g")
+                .attr("transform", `translate(${tooltipPadding}, ${yPos})`);
+
+            // Emoji
+            insightGroup.append("text")
+                .attr("x", 0)
+                .attr("y", 0)
+                .attr("font-size", "14px")
+                .text(insight.emoji);
+
+            // Title
+            insightGroup.append("text")
+                .attr("x", 22)
+                .attr("y", 0)
+                .attr("font-size", "12px")
+                .attr("fill", insight.color)
+                .attr("font-weight", "600")
+                .text(insight.title);
+
+            // Description on second line with more spacing
+            insightGroup.append("text")
+                .attr("x", 22)
+                .attr("y", 18)  // Increased from 16 to 18 for more line spacing
+                .attr("font-size", "10px")
+                .attr("fill", "#aaa")
+                .text(insight.desc);
+        });
+
+        // Store tooltip dimensions and annotation position for intelligent positioning
+        helpTooltip.datum({
+            width: tooltipWidth,
+            height: tooltipHeight,
+            annotationX: annotationX,
+            annotationY: annotationY,
+            annotationWidth: annotationWidth,
+            annotationHeight: annotationHeight
+        });
+
+        // Toggle help tooltip on button click with intelligent positioning
+        let helpVisible = false;
+        helpButton.on("click", function(event) {
+            event.stopPropagation();
+            event.preventDefault();
+            helpVisible = !helpVisible;
+
+            if (helpVisible) {
+                // Calculate intelligent position for tooltip
+                let tooltipX, tooltipY;
+
+                // Get annotation position in chart coordinates
+                const globalAnnotationX = annotationX;
+                const globalAnnotationY = annotationY;
+
+                // Default: Try to position to the right with gap
+                const gap = 15; // Gap between annotation box and tooltip
+                tooltipX = annotationWidth + gap;
+                tooltipY = -10;
+
+                // Check if tooltip would go beyond right edge
+                if (globalAnnotationX + annotationWidth + tooltipWidth + gap > vis.width) {
+                    // Try to position to the left
+                    tooltipX = -tooltipWidth - gap;
+
+                    // Check if tooltip would go beyond left edge when positioned on left
+                    if (globalAnnotationX + tooltipX < 0) {
+                        // Position below the annotation box
+                        tooltipX = Math.max(-globalAnnotationX, Math.min(0, annotationWidth - tooltipWidth));
+                        tooltipY = annotationHeight + gap;
+
+                        // Check if it would go beyond bottom
+                        if (globalAnnotationY + tooltipY + tooltipHeight > vis.height) {
+                            // Position above the annotation box
+                            tooltipY = -tooltipHeight - gap;
+
+                            // Make sure it doesn't go above top edge
+                            if (globalAnnotationY + tooltipY < 0) {
+                                // Last resort: position at top of screen, offset horizontally
+                                tooltipY = -globalAnnotationY + 10;
+                                tooltipX = annotationWidth + gap; // Try to offset to the side
+                            }
+                        }
+                    }
+                }
+
+                // Final check: ensure tooltip doesn't overlap with annotation box
+                // If tooltip is positioned to the side, ensure vertical separation
+                if (Math.abs(tooltipX) > annotationWidth || tooltipX < -tooltipWidth) {
+                    // Tooltip is to the side, adjust Y if needed to avoid overlap
+                    if (tooltipY > -gap && tooltipY < annotationHeight) {
+                        tooltipY = Math.min(-gap, tooltipY);
+                    }
+                }
+
+                // Apply the calculated position
+                helpTooltip.attr("transform", `translate(${tooltipX}, ${tooltipY})`);
+
+                helpTooltip.style("display", "block");
+                helpTooltip.transition()
+                    .duration(200)
+                    .attr("opacity", 1);
+            } else {
+                helpTooltip.transition()
+                    .duration(200)
+                    .attr("opacity", 0)
+                    .on("end", function() {
+                        helpTooltip.style("display", "none");
+                    });
+            }
+        });
+
+        // Consistent left padding for detail text
+        const textIndent = 20;
+
+        // Gross comparison text
+        const grossTextFinal = annotation.append("text")
+            .attr("class", "context-detail")
+            .attr("x", textIndent)
+            .attr("y", 50)
+            .attr("fill", "#ffffff")
+            .attr("font-size", "13px");
+
+        grossTextFinal.append("tspan").text("Gross: ");
+        grossTextFinal.append("tspan")
+            .attr("font-weight", "bold")
+            .attr("fill", "#FFD700")
+            .text(contextInfo.grossDiff);
+        grossTextFinal.append("tspan")
+            .attr("fill", "#ffffff")
+            .text(` vs. ${peerStats.context} Avg.`);
+
+        // Rating comparison text - aligned with gross text
+        const ratingTextFinal = annotation.append("text")
+            .attr("class", "context-detail")
+            .attr("x", textIndent)
+            .attr("y", 72)
+            .attr("fill", "#ffffff")
+            .attr("font-size", "13px");
+
+        ratingTextFinal.append("tspan").text("Rating: ");
+        ratingTextFinal.append("tspan")
+            .attr("font-weight", "bold")
+            .attr("fill", "#FFD700")
+            .text(contextInfo.ratingDiff);
+        ratingTextFinal.append("tspan")
+            .attr("fill", "#ffffff")
+            .text(` vs. ${peerStats.context} Avg.`);
+
+        // Fade in annotation
+        annotation.transition()
+            .duration(300)
+            .attr("opacity", 1);
+
+        console.log(`Context-Click: ${movie.Series_Title} - ${contextInfo.label}`);
+    }
+
+    /**
+     * Calculate peer averages (excluding clicked movie)
+     * @param {Object} clickedMovie - The clicked movie
+     * @returns {Object} Peer statistics (avgGross, avgYear, avgRating, context)
+     */
+    calculatePeerAverages(clickedMovie) {
+        let vis = this;
+
+        // Get all other visible dots (respecting current filters)
+        const peerMovies = vis.displayData.filter(d => d !== clickedMovie);
+
+        if (peerMovies.length === 0) {
+            // Fallback if no peers
+            return {
+                avgGross: clickedMovie.Gross,
+                avgYear: clickedMovie.Released_Year,
+                avgRating: clickedMovie.IMDB_Rating,
+                context: "All"
+            };
+        }
+
+        // Calculate averages
+        const avgGross = d3.mean(peerMovies, d => d.Gross);
+        const avgYear = d3.mean(peerMovies, d => d.Released_Year);
+        const avgRating = d3.mean(peerMovies, d => d.IMDB_Rating);
+
+        // Determine context string for annotation
+        let context = "";
+        if (vis.selectedGenres.size > 0 && vis.selectedGenres.size < vis.genres.length) {
+            // Genre filter active
+            context = Array.from(vis.selectedGenres).join("/");
+        } else {
+            context = "All";
+        }
+
+        if (vis.yearRange) {
+            // Timeline filter active - round years to avoid decimals
+            context += ` (${Math.round(vis.yearRange[0])}-${Math.round(vis.yearRange[1])})`;
+        }
+
+        return {
+            avgGross,
+            avgYear,
+            avgRating,
+            context
+        };
+    }
+
+    /**
+     * Determine context label based on relative performance
+     * @param {Object} movie - The clicked movie
+     * @param {Object} peerStats - Peer statistics
+     * @returns {Object} Context info (label, color, grossDiff, ratingDiff)
+     */
+    determineContextLabel(movie, peerStats) {
+        const grossDelta = movie.Gross - peerStats.avgGross;
+        const ratingDelta = movie.IMDB_Rating - peerStats.avgRating;
+
+        // Format deltas
+        const grossDiff = (grossDelta >= 0 ? "+" : "") + "$" + (grossDelta / 1000000).toFixed(1) + "M";
+        const ratingDiff = (ratingDelta >= 0 ? "+" : "") + ratingDelta.toFixed(1);
+
+        // Determine label based on simple rules
+        let label, color;
+
+        if (grossDelta > 0 && ratingDelta > 0) {
+            label = "🚀 BLOCKBUSTER OUTPERFORMER";
+            color = "#ffd700"; // Gold
+        } else if (grossDelta < 0 && ratingDelta > 0) {
+            label = "💎 ACCLAIMED GEM";
+            color = "#87ceeb"; // Sky blue
+        } else if (grossDelta > 0 && ratingDelta < 0) {
+            label = "🍿 CRITIC-PROOF HIT";
+            color = "#ff6347"; // Tomato red
+        } else {
+            label = "📉 BELOW AVERAGE";
+            color = "#999"; // Gray
+        }
+
+        return {
+            label,
+            color,
+            grossDiff,
+            ratingDiff
+        };
+    }
+
+    /**
+     * Clear context-click artifacts (reference lines and annotation)
+     */
+    clearContextClick() {
+        let vis = this;
+
+        if (!vis.contextClickActive) return;
+
+        // Fade out and remove reference lines
+        vis.contextLinesGroup.selectAll("*")
+            .transition()
+            .duration(200)
+            .attr("opacity", 0)
+            .remove();
+
+        // Fade out and remove annotation
+        vis.contextAnnotationGroup.selectAll("*")
+            .transition()
+            .duration(200)
+            .attr("opacity", 0)
+            .remove();
+
+        // Reset state
+        vis.contextClickActive = false;
+        vis.contextClickedMovie = null;
+    }
+
+    /**
+     * Initialize click handlers for featured movie cards
+     */
+    initializeFeaturedCardHandlers() {
+        let vis = this;
+
+        // Initialize spotlight state
+        vis.spotlightActive = null; // null or 'highestGrossing' or 'highestRated' or 'hiddenGem'
+        vis.previousTransform = null; // Store transform before spotlight
+
+        // Add click handlers to each featured card
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .style("cursor", "pointer")
+            .on("click", function() {
+                const card = d3.select(this);
+
+                // Determine which card was clicked based on its content
+                let cardType = null;
+                if (card.select(".featured-icon").text() === "💰") {
+                    cardType = "highestGrossing";
+                } else if (card.select(".featured-icon").text() === "⭐") {
+                    cardType = "highestRated";
+                } else if (card.select(".featured-icon").text() === "💎") {
+                    cardType = "hiddenGem";
+                }
+
+                if (cardType) {
+                    vis.toggleSpotlight(cardType);
+                }
+            });
+    }
+
+    /**
+     * Toggle spotlight on a featured movie
+     * @param {string} cardType - 'highestGrossing', 'highestRated', or 'hiddenGem'
+     */
+    toggleSpotlight(cardType) {
+        let vis = this;
+
+        // Check if we're toggling the same spotlight off
+        if (vis.spotlightActive === cardType) {
+            vis.clearSpotlight();
+            return;
+        }
+
+        // Clear any existing spotlight
+        if (vis.spotlightActive) {
+            vis.clearSpotlight(false); // Don't animate out, we'll animate to new target
+        }
+
+        const targetMovie = vis.featuredMovies[cardType];
+
+        // Check if movie exists
+        if (!targetMovie) {
+            console.log(`No movie found for ${cardType}`);
+            return;
+        }
+
+        // Check if the movie is still visible in the current filtered data
+        const movieStillVisible = vis.displayData.some(d => d.Series_Title === targetMovie.Series_Title);
+        if (!movieStillVisible) {
+            console.log(`${targetMovie.Series_Title} is not visible with current filters`);
+            // Clear spotlight state but don't show any effects
+            vis.spotlightActive = null;
+            vis.previousTransform = null;
+            // Remove active state from cards
+            d3.select("#featured-movies").selectAll(".featured-card")
+                .classed("spotlight-active", false);
+            return;
+        }
+
+        // Set the active spotlight
+        vis.spotlightActive = cardType;
+        vis.previousSpotlightMovie = targetMovie; // Store for comparison after filter changes
+
+        // Store current transform before spotlight (if not already in spotlight mode)
+        if (!vis.previousTransform) {
+            vis.previousTransform = vis.currentTransform || d3.zoomIdentity;
+        }
+
+        // Add active state to the card
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .classed("spotlight-active", false);
+
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .filter(function() {
+                const icon = d3.select(this).select(".featured-icon").text();
+                return (cardType === "highestGrossing" && icon === "💰") ||
+                       (cardType === "highestRated" && icon === "⭐") ||
+                       (cardType === "hiddenGem" && icon === "💎");
+            })
+            .classed("spotlight-active", true);
+
+        // Fade all dots except the spotlight target
+        const allDots = vis.chartArea.selectAll(".dot");
+        console.log(`Applying spotlight to ${allDots.size()} dots. Target: ${targetMovie.Series_Title}`);
+
+        // Force immediate opacity change without any transitions
+        allDots.each(function(d) {
+            const dot = d3.select(this);
+
+            // Stop ALL transitions on this element
+            dot.interrupt();
+            dot.transition().duration(0); // Kill any pending transitions
+
+            // Remove any highlight classes that have !important opacity rules
+            dot.classed("is-highlighted", false)
+               .classed("is-dimmed", false)
+               .classed("is-active", false);
+
+            if (!d || !d.Series_Title) {
+                console.warn("Dot has no data or Series_Title", d);
+                // Use inline style with !important to override CSS
+                dot.attr("style", function() {
+                    const currentStyle = d3.select(this).attr("style") || "";
+                    return currentStyle.replace(/opacity:[^;]*/g, "") + "; opacity: 0.1 !important";
+                });
+                return;
+            }
+
+            const isTarget = d.Series_Title === targetMovie.Series_Title;
+            if (isTarget) {
+                console.log(`Found target movie: ${d.Series_Title}`);
+                // Use inline style with !important to override CSS
+                dot.attr("style", function() {
+                    const currentStyle = d3.select(this).attr("style") || "";
+                    return currentStyle.replace(/opacity:[^;]*/g, "") + "; opacity: 1 !important";
+                });
+            } else {
+                // Use inline style with !important to override CSS
+                dot.attr("style", function() {
+                    const currentStyle = d3.select(this).attr("style") || "";
+                    return currentStyle.replace(/opacity:[^;]*/g, "") + "; opacity: 0.1 !important";
+                });
+            }
+        });
+
+        // Add spotlight effect to the target dot
+        vis.chartArea.selectAll(".dot")
+            .filter(d => d.Series_Title === targetMovie.Series_Title)
+            .classed("spotlight-target", true)
+            .each(function() {
+                const dot = d3.select(this);
+
+                // Create a spotlight halo effect
+                const spotlightGroup = vis.chartArea.append("g")
+                    .attr("class", "spotlight-halo-group");
+
+                const cx = dot.attr("cx");
+                const cy = dot.attr("cy");
+
+                // Add multiple concentric circles for halo effect
+                [30, 20, 10].forEach((radius, i) => {
+                    spotlightGroup.append("circle")
+                        .attr("cx", cx)
+                        .attr("cy", cy)
+                        .attr("r", 0)
+                        .attr("fill", "none")
+                        .attr("stroke", "#FFD700")
+                        .attr("stroke-width", 2 - i * 0.5)
+                        .attr("opacity", 0)
+                        .transition()
+                        .duration(400)
+                        .delay(i * 100)
+                        .attr("r", radius)
+                        .attr("opacity", 0.6 - i * 0.2);
+                });
+
+                // Add pulsing animation to the halo
+                spotlightGroup.selectAll("circle")
+                    .transition()
+                    .delay(600)
+                    .duration(1500)
+                    .attr("opacity", 0.2)
+                    .transition()
+                    .duration(1500)
+                    .attr("opacity", 0.6)
+                    .on("end", function repeat() {
+                        d3.select(this)
+                            .transition()
+                            .duration(1500)
+                            .attr("opacity", 0.2)
+                            .transition()
+                            .duration(1500)
+                            .attr("opacity", 0.6)
+                            .on("end", repeat);
+                    });
+            });
+
+        // Calculate zoom and pan to center the featured dot
+        const targetX = vis.xScale(targetMovie.Released_Year);
+        const targetY = vis.yScale(targetMovie.Gross);
+
+        // Calculate the scale to zoom in (3x zoom)
+        const zoomScale = 3;
+
+        // Calculate translation to center the point
+        const centerX = vis.width / 2;
+        const centerY = vis.height / 2;
+
+        // Create the zoom transform
+        const transform = d3.zoomIdentity
+            .translate(centerX, centerY)
+            .scale(zoomScale)
+            .translate(-targetX, -targetY);
+
+        // Apply the zoom transform with animation
+        vis.svgContainer.transition()
+            .duration(750)
+            .call(vis.zoom.transform, transform);
+    }
+
+    /**
+     * Clear spotlight effect and restore normal view
+     * @param {boolean} animate - Whether to animate the transition
+     */
+    clearSpotlight(animate = true) {
+        let vis = this;
+
+        if (!vis.spotlightActive) return;
+
+        // Remove active state from cards
+        d3.select("#featured-movies").selectAll(".featured-card")
+            .classed("spotlight-active", false);
+
+        // Remove spotlight halo
+        vis.chartArea.selectAll(".spotlight-halo-group")
+            .transition()
+            .duration(animate ? 400 : 0)
+            .attr("opacity", 0)
+            .remove();
+
+        // Remove spotlight class from dots
+        vis.chartArea.selectAll(".dot")
+            .classed("spotlight-target", false);
+
+        // Restore all dots to normal opacity
+        vis.chartArea.selectAll(".dot").each(function() {
+            const dot = d3.select(this);
+            dot.interrupt(); // Cancel any ongoing transitions
+
+            // Remove inline opacity style to restore default
+            const currentStyle = dot.attr("style") || "";
+            const newStyle = currentStyle.replace(/opacity:[^;]*;?/gi, "").trim();
+            dot.attr("style", newStyle || null);
+
+            // Now apply default opacity
+            if (animate) {
+                dot.transition()
+                    .duration(400)
+                    .style("opacity", 0.8);
+            } else {
+                dot.style("opacity", 0.8);
+            }
+        });
+
+        // Restore previous zoom transform
+        if (animate && vis.previousTransform) {
+            vis.svgContainer.transition()
+                .duration(750)
+                .call(vis.zoom.transform, vis.previousTransform);
+        } else if (vis.previousTransform) {
+            vis.svgContainer.call(vis.zoom.transform, vis.previousTransform);
+        }
+
+        // Clear state
+        vis.spotlightActive = null;
+        vis.previousTransform = null;
+        vis.previousSpotlightMovie = null;
     }
 }
